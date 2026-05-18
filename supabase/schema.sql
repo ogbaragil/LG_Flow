@@ -84,3 +84,18 @@ create table if not exists public.transactions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Optional snapshot table used by the PWA cloud sync buttons.
+create table if not exists public.app_snapshots (
+  id text primary key,
+  payload jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.app_snapshots enable row level security;
+
+create policy if not exists "Anyone can manage default app snapshot"
+on public.app_snapshots
+for all
+using (true)
+with check (true);

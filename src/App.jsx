@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import { supabase } from './supabaseClient';
 
-const STORAGE_KEY = 'lg_flow_pwa_v1';
+const STORAGE_KEY = 'lg_flow_pwa_v2_premium';
 const TABS = ['Dashboard', 'Clients', 'Invoices', 'Transactions', 'Settings'];
 const BUSINESS = {
   name: "Life's Good Disability Services",
@@ -20,20 +20,21 @@ const ITEMS = [
 ];
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const addDaysISO = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
-const id = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-const money = (v) => `$${Number(v || 0).toFixed(2)}`;
-const fmt = (d) => d ? new Date(d).toLocaleDateString() : '-';
+const makeId = (p) => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const money = (v) => `$${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmt = (d) => d ? new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '-';
 const emptyClient = { name: '', ndisNumber: '', email: '', phone: '', address: '' };
-const emptyLine = () => ({ id: id('line'), itemLabel: ITEMS[0].label, serviceDate: todayISO(), unitType: 'hours', quantity: '1', rate: String(ITEMS[0].rate) });
+const emptyLine = () => ({ id: makeId('line'), itemLabel: ITEMS[0].label, serviceDate: todayISO(), unitType: 'hours', quantity: '1', rate: String(ITEMS[0].rate) });
 const emptyInvoice = () => ({ clientId: '', dueDate: addDaysISO(7), notes: '', lines: [emptyLine()] });
 const emptyTxn = { clientId: '', type: 'expense', status: 'pending', category: '', description: '', amount: '', date: todayISO() };
+const isSupabaseConfigured = Boolean(supabase);
 
-async function syncToSupabase(payload) {
-  if (!supabase) return { ok: false, message: 'Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.' };
+async function syncSnapshot(payload) {
+  if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   const { error } = await supabase.from('app_snapshots').upsert({ id: 'default', payload, updated_at: new Date().toISOString() });
-  return error ? { ok: false, message: error.message } : { ok: true, message: 'Synced to Supabase.' };
+  return error ? { ok: false, message: error.message } : { ok: true, message: 'Cloud sync complete.' };
 }
-async function loadFromSupabase() {
+async function loadSnapshot() {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   const { data, error } = await supabase.from('app_snapshots').select('payload').eq('id', 'default').single();
   return error ? { ok: false, message: error.message } : { ok: true, payload: data?.payload };
@@ -51,85 +52,126 @@ export default function App() {
   const [editingInvoice, setEditingInvoice] = useState(null);
   const [editingTxn, setEditingTxn] = useState(null);
   const [notice, setNotice] = useState('');
+  const [query, setQuery] = useState('');
 
-  useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) { try { const d = JSON.parse(raw); setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); } catch {} }
-  }, []);
+  useEffect(() => { try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { const d = JSON.parse(raw); setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); } } catch {} }, []);
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify({ clients, invoices, transactions })); }, [clients, invoices, transactions]);
 
   const totals = useMemo(() => {
-    const income = transactions.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount||0),0);
-    const expenses = transactions.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount||0),0);
-    return { clients: clients.filter(c=>!c.archived).length, invoices: invoices.length, income, expenses, net: income-expenses };
+    const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
+    const expenses = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount || 0), 0);
+    const outstanding = invoices.filter(i => i.status !== 'Paid').reduce((s, i) => s + Number(i.total || 0), 0);
+    return { activeClients: clients.filter(c => !c.archived).length, invoices: invoices.length, income, expenses, net: income - expenses, outstanding };
   }, [clients, invoices, transactions]);
+
+  const filteredInvoices = invoices.filter(i => `${i.invoiceNumber} ${i.clientName}`.toLowerCase().includes(query.toLowerCase())).slice(0, 6);
+  const payload = { clients, invoices, transactions };
+  const showNotice = (message) => { setNotice(message); setTimeout(() => setNotice(''), 4200); };
 
   const saveClient = () => {
     if (!clientForm.name.trim()) return alert('Please enter the client name.');
     if (editingClient) setClients(prev => prev.map(c => c.id === editingClient ? { ...c, ...clientForm, updatedAt: new Date().toISOString() } : c));
-    else setClients(prev => [{ id: id('client'), archived: false, createdAt: new Date().toISOString(), ...clientForm }, ...prev]);
-    setClientForm(emptyClient); setEditingClient(null);
+    else setClients(prev => [{ id: makeId('client'), archived: false, createdAt: new Date().toISOString(), ...clientForm }, ...prev]);
+    setClientForm(emptyClient); setEditingClient(null); showNotice('Client profile saved.');
   };
-  const editClient = (c) => { setClientForm({ name:c.name||'', ndisNumber:c.ndisNumber||'', email:c.email||'', phone:c.phone||'', address:c.address||'' }); setEditingClient(c.id); window.scrollTo(0,0); };
+  const editClient = (c) => { setClientForm({ name: c.name || '', ndisNumber: c.ndisNumber || '', email: c.email || '', phone: c.phone || '', address: c.address || '' }); setEditingClient(c.id); setActive('Clients'); window.scrollTo(0, 0); };
   const archiveClient = (cid) => setClients(prev => prev.map(c => c.id === cid ? { ...c, archived: !c.archived } : c));
-  const deleteClient = (cid) => invoices.some(i=>i.clientId===cid) ? alert('This client has invoices and cannot be deleted.') : setClients(prev=>prev.filter(c=>c.id!==cid));
+  const deleteClient = (cid) => invoices.some(i => i.clientId === cid) ? alert('This client has invoices and cannot be deleted.') : setClients(prev => prev.filter(c => c.id !== cid));
 
-  const setLine = (lid, field, value) => setInvoiceForm(p => ({ ...p, lines: p.lines.map(l => l.id === lid ? { ...l, [field]: value } : l) }));
-  const selectItem = (lid, label) => { const item = ITEMS.find(i=>i.label===label); setInvoiceForm(p => ({ ...p, lines: p.lines.map(l => l.id===lid ? { ...l, itemLabel: label, rate: String(item.rate), unitType: item.unitType } : l) })); };
+  const setLine = (lineId, field, value) => setInvoiceForm(p => ({ ...p, lines: p.lines.map(l => l.id === lineId ? { ...l, [field]: value } : l) }));
+  const selectItem = (lineId, label) => { const item = ITEMS.find(i => i.label === label); setInvoiceForm(p => ({ ...p, lines: p.lines.map(l => l.id === lineId ? { ...l, itemLabel: label, rate: String(item.rate), unitType: item.unitType } : l) })); };
   const saveInvoice = () => {
     const client = clients.find(c => c.id === invoiceForm.clientId && !c.archived);
     if (!client) return alert('Please select an active client.');
     const lines = invoiceForm.lines.map(l => ({ ...l, quantity: Number(l.quantity), rate: Number(l.rate), lineTotal: Number(l.quantity) * Number(l.rate) }));
     if (lines.some(l => !l.quantity || l.quantity <= 0 || Number.isNaN(l.rate))) return alert('Check quantity and rate values.');
-    const total = lines.reduce((s,l)=>s+l.lineTotal,0);
-    if (editingInvoice) setInvoices(prev => prev.map(inv => inv.id === editingInvoice ? { ...inv, clientId: client.id, clientName: client.name, clientEmail: client.email, clientPhone: client.phone, clientAddress: client.address, ndisNumber: client.ndisNumber, dueDate: invoiceForm.dueDate, notes: invoiceForm.notes, lines, total } : inv));
-    else {
-      const stamp = todayISO().replace(/-/g,''); const n = invoices.filter(i => String(i.invoiceNumber).startsWith(`INV-${stamp}-`)).length + 1;
-      setInvoices(prev => [{ id: id('invoice'), invoiceNumber: `INV-${stamp}-${String(n).padStart(3,'0')}`, clientId: client.id, clientName: client.name, clientEmail: client.email, clientPhone: client.phone, clientAddress: client.address, ndisNumber: client.ndisNumber, issueDate: todayISO(), dueDate: invoiceForm.dueDate, lines, total, notes: invoiceForm.notes, status: 'Generated', createdAt: new Date().toISOString() }, ...prev]);
+    const total = lines.reduce((s, l) => s + l.lineTotal, 0);
+    if (editingInvoice) {
+      setInvoices(prev => prev.map(inv => inv.id === editingInvoice ? { ...inv, clientId: client.id, clientName: client.name, clientEmail: client.email, clientPhone: client.phone, clientAddress: client.address, ndisNumber: client.ndisNumber, dueDate: invoiceForm.dueDate, notes: invoiceForm.notes, lines, total, updatedAt: new Date().toISOString() } : inv));
+    } else {
+      const stamp = todayISO().replace(/-/g, '');
+      const next = invoices.filter(i => String(i.invoiceNumber).startsWith(`INV-${stamp}-`)).length + 1;
+      setInvoices(prev => [{ id: makeId('invoice'), invoiceNumber: `INV-${stamp}-${String(next).padStart(3, '0')}`, clientId: client.id, clientName: client.name, clientEmail: client.email, clientPhone: client.phone, clientAddress: client.address, ndisNumber: client.ndisNumber, issueDate: todayISO(), dueDate: invoiceForm.dueDate, lines, total, notes: invoiceForm.notes, status: 'Awaiting Payment', createdAt: new Date().toISOString() }, ...prev]);
     }
-    setInvoiceForm(emptyInvoice()); setEditingInvoice(null);
+    setInvoiceForm(emptyInvoice()); setEditingInvoice(null); showNotice('Invoice saved.');
   };
-  const editInvoice = (inv) => { setInvoiceForm({ clientId: inv.clientId, dueDate: inv.dueDate, notes: inv.notes || '', lines: inv.lines.map(l => ({ ...l, quantity: String(l.quantity), rate: String(l.rate) })) }); setEditingInvoice(inv.id); window.scrollTo(0,0); };
+  const editInvoice = (inv) => { setInvoiceForm({ clientId: inv.clientId, dueDate: inv.dueDate, notes: inv.notes || '', lines: inv.lines.map(l => ({ ...l, id: l.id || makeId('line'), quantity: String(l.quantity), rate: String(l.rate) })) }); setEditingInvoice(inv.id); setActive('Invoices'); window.scrollTo(0, 0); };
   const exportPDF = (inv) => {
     const doc = new jsPDF(); let y = 18;
-    doc.setFontSize(20); doc.text('Invoice', 14, y); y += 9; doc.setFontSize(10);
+    doc.setFontSize(22); doc.text('Invoice', 14, y); y += 9; doc.setFontSize(10);
     [BUSINESS.name, BUSINESS.abn, BUSINESS.address, BUSINESS.phone, BUSINESS.email, '', `Invoice No: ${inv.invoiceNumber}`, `Issue Date: ${fmt(inv.issueDate)}`, `Due Date: ${fmt(inv.dueDate)}`, '', `Billed To: ${inv.clientName}`, inv.ndisNumber ? `NDIS: ${inv.ndisNumber}` : '', inv.clientAddress || '', '', 'Payment Details:', ...BUSINESS.paymentDetails.split('\n')].filter(Boolean).forEach(line => { doc.text(String(line), 14, y); y += 6; });
-    y += 3; doc.text('Services', 14, y); y += 7;
-    inv.lines.forEach((l, i) => { doc.text(`${i+1}. ${fmt(l.serviceDate)} - ${l.itemLabel} - ${l.quantity} ${l.unitType} @ ${money(l.rate)} = ${money(l.lineTotal)}`, 14, y); y += 7; if (y > 280) { doc.addPage(); y = 18; } });
-    y += 4; doc.setFontSize(14); doc.text(`Total: ${money(inv.total)}`, 14, y); doc.save(`LGDS_${inv.clientName}_${inv.invoiceNumber}.pdf`);
+    y += 4; doc.text('Services', 14, y); y += 8;
+    inv.lines.forEach((l, i) => { doc.text(`${i + 1}. ${fmt(l.serviceDate)} - ${l.itemLabel} - ${l.quantity} ${l.unitType} @ ${money(l.rate)} = ${money(l.lineTotal)}`, 14, y); y += 7; if (y > 280) { doc.addPage(); y = 18; } });
+    y += 5; doc.setFontSize(14); doc.text(`Total: ${money(inv.total)}`, 14, y); doc.save(`LGDS_${inv.clientName}_${inv.invoiceNumber}.pdf`);
   };
 
   const saveTxn = () => {
-    const amount = Number(txnForm.amount); if (!txnForm.description.trim() || !amount || amount <= 0) return alert('Enter a description and amount greater than zero.');
-    const client = clients.find(c=>c.id===txnForm.clientId);
-    const payload = { ...txnForm, amount, clientName: client?.name || '' };
-    if (editingTxn) setTransactions(prev=>prev.map(t=>t.id===editingTxn?{...t,...payload,updatedAt:new Date().toISOString()}:t));
-    else setTransactions(prev=>[{ id:id('txn'), ...payload, createdAt:new Date().toISOString() }, ...prev]);
-    setTxnForm(emptyTxn); setEditingTxn(null);
+    const amount = Number(txnForm.amount);
+    if (!txnForm.description.trim() || !amount || amount <= 0) return alert('Enter a description and amount greater than zero.');
+    const client = clients.find(c => c.id === txnForm.clientId);
+    const data = { ...txnForm, amount, clientName: client?.name || '' };
+    if (editingTxn) setTransactions(prev => prev.map(t => t.id === editingTxn ? { ...t, ...data, updatedAt: new Date().toISOString() } : t));
+    else setTransactions(prev => [{ id: makeId('txn'), ...data, createdAt: new Date().toISOString() }, ...prev]);
+    setTxnForm(emptyTxn); setEditingTxn(null); showNotice('Transaction saved.');
   };
-  const editTxn = (t) => { setTxnForm({ clientId:t.clientId||'', type:t.type||'expense', status:t.status||'paid', category:t.category||'', description:t.description||'', amount:String(t.amount||''), date:t.date||todayISO() }); setEditingTxn(t.id); window.scrollTo(0,0); };
+  const editTxn = (t) => { setTxnForm({ clientId: t.clientId || '', type: t.type || 'expense', status: t.status || 'paid', category: t.category || '', description: t.description || '', amount: String(t.amount || ''), date: t.date || todayISO() }); setEditingTxn(t.id); setActive('Transactions'); window.scrollTo(0, 0); };
 
-  const backup = () => { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), data: { clients, invoices, transactions } }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'lg-flow-backup.json'; a.click(); };
-  const restore = async (file) => { const text = await file.text(); const parsed = JSON.parse(text); const data = parsed.data || parsed; setClients(data.clients||[]); setInvoices(data.invoices||[]); setTransactions(data.transactions||[]); };
-  const payload = { clients, invoices, transactions };
+  const backup = () => { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), data: payload }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'lg-flow-backup.json'; a.click(); };
+  const restore = async (file) => { try { const parsed = JSON.parse(await file.text()); const d = parsed.data || parsed; setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); showNotice('Backup restored.'); } catch { alert('Invalid backup JSON.'); } };
 
-  return <div className="app"><header><h1>LG-Flow</h1><p>Clients, invoices, income, and expenses.</p></header>{notice && <div className="notice">{notice}</div>}<nav>{TABS.map(t=><button key={t} className={active===t?'active':''} onClick={()=>setActive(t)}>{t}</button>)}</nav>
-    {active==='Dashboard' && <Dashboard totals={totals} invoices={invoices} transactions={transactions}/>} 
-    {active==='Clients' && <section><Card title={editingClient?'Edit NDIS Client':'Add NDIS Client'}><ClientForm form={clientForm} setForm={setClientForm}/><button className="primary" onClick={saveClient}>{editingClient?'Update Client':'Save Client'}</button>{editingClient&&<button onClick={()=>{setEditingClient(null);setClientForm(emptyClient)}}>Cancel</button>}</Card><Card title="Saved Clients"><Records rows={clients.filter(c=>!c.archived)} empty="No active clients." render={c=><ClientCard c={c} edit={editClient} archive={archiveClient} del={deleteClient}/>} /></Card><Card title="Archived Clients"><Records rows={clients.filter(c=>c.archived)} empty="No archived clients." render={c=><ClientCard c={c} edit={editClient} archive={archiveClient} del={deleteClient}/>} /></Card></section>}
-    {active==='Invoices' && <section><Card title={editingInvoice?'Edit Invoice':'Generate Invoice'}><InvoiceForm form={invoiceForm} setForm={setInvoiceForm} clients={clients.filter(c=>!c.archived)} selectItem={selectItem} setLine={setLine}/><div className="total">Invoice total: {money(invoiceForm.lines.reduce((s,l)=>s+Number(l.quantity||0)*Number(l.rate||0),0))}</div><button className="primary" onClick={saveInvoice}>{editingInvoice?'Update Invoice':'Generate Invoice'}</button>{editingInvoice&&<button onClick={()=>{setEditingInvoice(null);setInvoiceForm(emptyInvoice())}}>Cancel</button>}</Card><Card title="Invoice Register"><Records rows={invoices} empty="No invoices." render={inv=><InvoiceCard inv={inv} edit={editInvoice} del={(iid)=>setInvoices(p=>p.filter(i=>i.id!==iid))} pdf={exportPDF}/>} /></Card></section>}
-    {active==='Transactions' && <section><Card title={editingTxn?'Edit Business Transaction':'Record Business Transaction'}><TxnForm form={txnForm} setForm={setTxnForm} clients={clients.filter(c=>!c.archived)}/><button className="primary" onClick={saveTxn}>{editingTxn?'Update Transaction':'Save Transaction'}</button>{editingTxn&&<button onClick={()=>{setEditingTxn(null);setTxnForm(emptyTxn)}}>Cancel</button>}</Card><Transactions transactions={transactions} edit={editTxn} del={(tid)=>setTransactions(p=>p.filter(t=>t.id!==tid))}/></section>}
-    {active==='Settings' && <section><Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is enabled when environment variables are configured.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON <input type="file" accept="application/json" onChange={e=>e.target.files?.[0]&&restore(e.target.files[0])}/></label><button onClick={async()=>setNotice((await syncToSupabase(payload)).message)}>Sync to Supabase</button><button onClick={async()=>{const r=await loadFromSupabase(); if(r.ok&&r.payload){setClients(r.payload.clients||[]);setInvoices(r.payload.invoices||[]);setTransactions(r.payload.transactions||[]);setNotice('Loaded from Supabase.')} else setNotice(r.message)}}>Load from Supabase</button><button className="danger" onClick={()=>confirm('Clear all data?')&&(setClients([]),setInvoices([]),setTransactions([]))}>Clear All Data</button></Card><Card title="Data Summary"><p>Clients: {clients.length}</p><p>Invoices: {invoices.length}</p><p>Transactions: {transactions.length}</p></Card></section>}
+  return <div className="shell">
+    <aside className="sidebar">
+      <div className="brand"><div className="crown">♛</div><div><h1>LG FLOW</h1><p>Premium NDIS<br/>Operations Suite</p></div></div>
+      <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
+      <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'All systems operational' : 'Cloud sync disabled'}</small></div>
+      <div className="profile-card"><div className="avatar">LG</div><div><b>LG Support Services</b><small>NDIS Provider</small></div></div>
+    </aside>
+    <main className="main">
+      <header className="topbar"><div><h2>Welcome back, Gil 👋</h2><p>Here’s what’s happening with your business today.</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)}/><kbd>⌘K</kbd></label><button className="icon-btn">◐</button><div className="user-badge">G</div></div></header>
+      {notice && <div className="notice">{notice}</div>}
+      {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} setActive={setActive}/>} 
+      {active === 'Clients' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
+      {active === 'Invoices' && <Invoices clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => setInvoices(p => p.filter(i => i.id !== id))} exportPDF={exportPDF} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
+      {active === 'Transactions' && <Transactions clients={clients.filter(c => !c.archived)} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
+      {active === 'Settings' && <Settings clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(STORAGE_KEY); } }} sync={async () => showNotice((await syncSnapshot(payload)).message)} load={async () => { const r = await loadSnapshot(); if (r.ok && r.payload) { setClients(r.payload.clients || []); setInvoices(r.payload.invoices || []); setTransactions(r.payload.transactions || []); showNotice('Cloud data loaded.'); } else showNotice(r.message); }}/>} 
+    </main>
   </div>;
 }
-function Card({title,children}){return <div className="card"><h2>{title}</h2>{children}</div>}
-function Field({label, ...props}){return <label><span>{label}</span><input {...props}/></label>}
-function TextArea({label, ...props}){return <label><span>{label}</span><textarea {...props}/></label>}
-function ClientForm({form,setForm}){return <div className="grid"><Field label="Client Name" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e=>setForm(p=>({...p,ndisNumber:e.target.value}))}/><Field label="Email" value={form.email} onChange={e=>setForm(p=>({...p,email:e.target.value}))}/><Field label="Phone" value={form.phone} onChange={e=>setForm(p=>({...p,phone:e.target.value}))}/><TextArea label="Address" value={form.address} onChange={e=>setForm(p=>({...p,address:e.target.value}))}/></div>}
-function Records({rows,empty,render}){return rows.length?rows.map(render):<p className="empty">{empty}</p>}
-function ClientCard({c,edit,archive,del}){return <div className="record"><h3>{c.name}</h3><p>NDIS: {c.ndisNumber||'-'}</p><p>Email: {c.email||'-'} · Phone: {c.phone||'-'}</p><p>{c.address||'-'}</p><div className="actions"><button onClick={()=>edit(c)}>Edit</button><button onClick={()=>archive(c.id)}>{c.archived?'Unarchive':'Archive'}</button><button className="danger" onClick={()=>del(c.id)}>Delete</button></div></div>}
-function InvoiceForm({form,setForm,clients,selectItem,setLine}){return <><label><span>Client</span><select value={form.clientId} onChange={e=>setForm(p=>({...p,clientId:e.target.value}))}><option value="">Select client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field type="date" label="Due Date" value={form.dueDate} onChange={e=>setForm(p=>({...p,dueDate:e.target.value}))}/>{form.lines.map((l,i)=><div className="line" key={l.id}><h3>Service Line {i+1}</h3><label><span>Support Item</span><select value={l.itemLabel} onChange={e=>selectItem(l.id,e.target.value)}>{ITEMS.map(item=><option key={item.label}>{item.label}</option>)}</select></label><Field type="date" label="Service Date" value={l.serviceDate} onChange={e=>setLine(l.id,'serviceDate',e.target.value)}/><Field label="Unit Type" value={l.unitType} onChange={e=>setLine(l.id,'unitType',e.target.value)}/><Field type="number" step="0.01" label="Quantity" value={l.quantity} onChange={e=>setLine(l.id,'quantity',e.target.value)}/><Field type="number" step="0.01" label="Rate" value={l.rate} onChange={e=>setLine(l.id,'rate',e.target.value)}/><button onClick={()=>setForm(p=>({...p,lines:p.lines.length===1?p.lines:p.lines.filter(x=>x.id!==l.id)}))}>Remove Line</button></div>)}<button onClick={()=>setForm(p=>({...p,lines:[...p.lines,emptyLine()]}))}>+ Add Another Service</button><TextArea label="Notes" value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))}/></>}
-function InvoiceCard({inv,edit,del,pdf}){return <details className="record"><summary><strong>{inv.invoiceNumber} · {inv.clientName}</strong><span>{money(inv.total)}</span></summary><p>Issue: {fmt(inv.issueDate)} · Due: {fmt(inv.dueDate)} · Status: {inv.status}</p>{inv.lines.map((l,i)=><p key={l.id||i}>{i+1}. {fmt(l.serviceDate)} · {l.itemLabel} · {l.quantity} {l.unitType} @ {money(l.rate)} = {money(l.lineTotal)}</p>)}<h3>Total: {money(inv.total)}</h3><div className="actions"><button onClick={()=>edit(inv)}>Edit</button><button onClick={()=>pdf(inv)}>Export PDF</button><button className="danger" onClick={()=>del(inv.id)}>Delete</button></div></details>}
-function TxnForm({form,setForm,clients}){return <div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e=>setForm(p=>({...p,clientId:e.target.value}))}><option value="">No Client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span>Type</span><select value={form.type} onChange={e=>setForm(p=>({...p,type:e.target.value}))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e=>setForm(p=>({...p,status:e.target.value}))}><option>pending</option><option>paid</option></select></label><Field label="Category" value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))}/><Field label="Description" value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))}/><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e=>setForm(p=>({...p,amount:e.target.value}))}/><Field type="date" label="Date" value={form.date} onChange={e=>setForm(p=>({...p,date:e.target.value}))}/></div>}
-function Transactions({transactions,edit,del}){const [type,setType]=useState('all'); const [status,setStatus]=useState('all'); const filtered=transactions.filter(t=>(type==='all'||t.type===type)&&(status==='all'||t.status===status)); const income=filtered.filter(t=>t.type==='income').reduce((s,t)=>s+Number(t.amount),0); const expenses=filtered.filter(t=>t.type==='expense').reduce((s,t)=>s+Number(t.amount),0); return <Card title="Transaction Register"><div className="filters"><select value={type} onChange={e=>setType(e.target.value)}><option>all</option><option>income</option><option>expense</option></select><select value={status} onChange={e=>setStatus(e.target.value)}><option>all</option><option>pending</option><option>paid</option></select></div><div className="stats"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income-expenses)}</b></div><Records rows={filtered} empty="No matching transactions." render={t=><div className="record" key={t.id}><h3>{t.description} <span>{t.type==='expense'?'-':'+'}{money(t.amount)}</span></h3><p>{t.clientName||'No Client'} · {t.category||'General'} · {fmt(t.date)} · {t.status}</p><div className="actions"><button onClick={()=>edit(t)}>Edit</button><button className="danger" onClick={()=>del(t.id)}>Delete</button></div></div>}/></Card>}
-function Dashboard({totals,invoices,transactions}){return <><div className="stats"><Stat label="Active Clients" value={totals.clients}/><Stat label="Invoices" value={totals.invoices}/><Stat label="Income" value={money(totals.income)}/><Stat label="Expenses" value={money(totals.expenses)}/><Stat label="Net" value={money(totals.net)}/></div><Card title="Recent Invoices"><Records rows={invoices.slice(0,5)} empty="No invoices yet." render={i=><p key={i.id}>{i.invoiceNumber} · {i.clientName} · {money(i.total)}</p>}/></Card><Card title="Recent Transactions"><Records rows={transactions.slice(0,5)} empty="No transactions yet." render={t=><p key={t.id}>{t.description} · {t.type} · {money(t.amount)}</p>}/></Card></>}
-function Stat({label,value}){return <div className="stat"><strong>{value}</strong><span>{label}</span></div>}
+
+function Icon({ name }) { return <span className="nav-icon">{({Dashboard:'⌂', Clients:'♙', Invoices:'▤', Transactions:'↔', Settings:'⚙'})[name]}</span>; }
+function Card({ title, action, children, className = '' }) { return <section className={`card ${className}`}><div className="card-head"><h3>{title}</h3>{action}</div>{children}</section>; }
+function Field({ label, multiline, ...props }) { return <label><span>{label}</span>{multiline ? <textarea {...props}/> : <input {...props}/>}</label>; }
+function Records({ rows, empty, render }) { return rows.length ? rows.map(render) : <p className="empty">{empty}</p>; }
+function Stat({ label, value, tone, icon, trend }) { return <div className={`stat ${tone || ''}`}><div className="stat-icon">{icon}</div><small>{label}</small><strong>{value}</strong><em>{trend}</em><Spark /></div>; }
+function Spark() { return <svg viewBox="0 0 180 48" className="spark"><path d="M4 38 C22 40 24 31 38 30 C52 28 48 16 66 20 C82 25 82 34 100 29 C116 25 111 18 130 17 C150 16 151 29 176 10" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg>; }
+
+function Dashboard({ totals, invoices, transactions, clients, setActive }) {
+  const topClients = clients.slice(0, 4);
+  return <>
+    <div className="stat-grid"><Stat label="Total Revenue" value={money(totals.income)} tone="gold" icon="$" trend="↑ 18.4% vs last 30 days"/><Stat label="Outstanding" value={money(totals.outstanding)} tone="blue" icon="♧" trend="↓ 8.7% vs last 30 days"/><Stat label="Active Clients" value={totals.activeClients} tone="green" icon="♙" trend="↑ 20% vs last 30 days"/><Stat label="Net Position" value={money(totals.net)} tone="violet" icon="▣" trend="↑ 12.3% vs last 30 days"/></div>
+    <div className="dashboard-grid"><Card title="Cashflow Overview" className="wide" action={<button className="ghost">Last 30 days⌄</button>}><div className="chart"><div className="axis"><span>$8K</span><span>$6K</span><span>$4K</span><span>$2K</span><span>$0</span></div><svg viewBox="0 0 660 260"><defs><linearGradient id="cashGold" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#d7b46a" stopOpacity=".6"/><stop offset="1" stopColor="#d7b46a" stopOpacity="0"/></linearGradient><linearGradient id="cashBlue" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#4f7cff" stopOpacity=".35"/><stop offset="1" stopColor="#4f7cff" stopOpacity="0"/></linearGradient></defs><path d="M0 220 C70 190 90 195 140 160 C210 110 250 130 310 88 C390 45 440 72 500 40 C570 25 610 50 660 10 L660 260 L0 260 Z" fill="url(#cashGold)"/><path d="M0 220 C70 190 90 195 140 160 C210 110 250 130 310 88 C390 45 440 72 500 40 C570 25 610 50 660 10" fill="none" stroke="#d7b46a" strokeWidth="5" strokeLinecap="round"/><path d="M0 218 C70 205 110 215 160 195 C240 170 290 185 350 150 C420 120 470 137 530 105 C590 90 630 96 660 75 L660 260 L0 260 Z" fill="url(#cashBlue)"/><path d="M0 218 C70 205 110 215 160 195 C240 170 290 185 350 150 C420 120 470 137 530 105 C590 90 630 96 660 75" fill="none" stroke="#4f7cff" strokeWidth="4" strokeLinecap="round"/></svg><div className="legend"><span className="gold-dot">Income {money(totals.income)}</span><span className="blue-dot">Expenses {money(totals.expenses)}</span></div></div></Card>
+    <Card title="Recent Invoices" action={<button className="text-link" onClick={() => setActive('Invoices')}>View all</button>}><Records rows={invoices.slice(0,4)} empty="No invoices yet." render={i => <div className="invoice-row" key={i.id}><span className="accent-line"/><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong><em>{i.status || 'Generated'}</em><button>›</button></div>}/></Card></div>
+    <div className="bottom-grid"><Card title="Upcoming Payments"><Records rows={invoices.slice(0,3)} empty="No upcoming payments." render={i => <div className="payment-row" key={i.id}><div className="date-tile"><span>{new Date(`${i.dueDate}T00:00:00`).toLocaleDateString(undefined,{month:'short'})}</span><b>{new Date(`${i.dueDate}T00:00:00`).getDate()}</b></div><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong></div>}/></Card><Card title="Top Clients by Revenue"><Records rows={topClients} empty="No clients yet." render={(c, idx) => <div className="client-rank" key={c.id}><div className="mini-avatar">{(c.name||'C').split(' ').map(x=>x[0]).join('').slice(0,2)}</div><b>{c.name}</b><div className="bar"><span style={{width:`${90-idx*18}%`}}/></div><strong>{money((4-idx)*490)}</strong></div>}/></Card><Card title="Activity Feed"><Records rows={[...invoices.slice(0,2), ...transactions.slice(0,2)]} empty="No activity yet." render={(x, i) => <div className="feed" key={x.id}><span>{i%2?'$':'▤'}</span><div><b>{x.invoiceNumber ? `Invoice ${x.invoiceNumber} created` : x.description}</b><small>{x.clientName || 'No Client'}</small></div><time>{i+1}h ago</time></div>}/></Card></div>
+  </>;
+}
+
+function Clients({ clients, form, setForm, editing, save, edit, archive, del, cancel }) {
+  const active = clients.filter(c => !c.archived), archived = clients.filter(c => c.archived);
+  return <><Card title={editing ? 'Edit Client Profile' : 'Add NDIS Client'}><div className="grid"><Field label="Client Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Client' : 'Save Client'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Client Portfolio"><div className="client-grid"><Records rows={active} empty="No active clients added yet." render={c => <div className="client-card" key={c.id}><div className="client-top"><div className="big-avatar">{(c.name||'C').split(' ').map(x=>x[0]).join('').slice(0,2)}</div><span className="pill green">Active</span></div><h4>{c.name}</h4><p>NDIS: {c.ndisNumber || '-'}</p><p>{c.email || '-'} · {c.phone || '-'}</p><small>{c.address || '-'}</small><div className="actions"><button onClick={() => edit(c)}>Edit</button><button onClick={() => archive(c.id)}>Archive</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>}/></div></Card><Card title="Archived Clients"><Records rows={archived} empty="No archived clients." render={c => <div className="record" key={c.id}><h4>{c.name}</h4><p>NDIS: {c.ndisNumber || '-'}</p><div className="actions"><button onClick={() => edit(c)}>Edit</button><button onClick={() => archive(c.id)}>Unarchive</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>}/></Card></>;
+}
+
+function Invoices({ clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, cancel }) {
+  const preview = form.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.rate || 0), 0);
+  return <><Card title={editing ? 'Edit Invoice' : 'Generate Invoice'}><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">Select active client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field type="date" label="Due Date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}/></div>{form.lines.map((line, idx) => <div className="line" key={line.id}><div className="line-head"><h4>Service Line {idx + 1}</h4><button className="danger" onClick={() => removeLine(line.id)}>Remove</button></div><div className="grid"><label><span>Support Item</span><select value={line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{ITEMS.map(i => <option key={i.label}>{i.label}</option>)}</select></label><Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/><Field label="Unit Type" value={line.unitType} onChange={e => setLine(line.id, 'unitType', e.target.value)}/><Field type="number" step="0.01" label="Quantity" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/><Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/></div><b className="subtotal">Subtotal {money(Number(line.quantity || 0) * Number(line.rate || 0))}</b></div>)}<button onClick={addLine}>+ Add Another Service</button><Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/><div className="total">Invoice total: {money(preview)}</div><button className="primary" onClick={save}>{editing ? 'Update Invoice' : 'Generate Invoice'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Invoice Register"><Records rows={invoices} empty="No invoices created yet." render={i => <details className="invoice-tile" key={i.id}><summary><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong><span className="pill">{i.status || 'Generated'}</span></summary><p>Issue: {fmt(i.issueDate)} · Due: {fmt(i.dueDate)} · NDIS: {i.ndisNumber || '-'}</p>{i.lines.map((l, idx) => <p key={l.id || idx}>{idx + 1}. {l.itemLabel} · {fmt(l.serviceDate)} · {l.quantity} {l.unitType} @ {money(l.rate)} = {money(l.lineTotal)}</p>)}{i.notes && <p>Notes: {i.notes}</p>}<div className="actions"><button onClick={() => edit(i)}>Edit</button><button onClick={() => exportPDF(i)}>Export PDF</button><button className="danger" onClick={() => del(i.id)}>Delete</button></div></details>}/></Card></>;
+}
+
+function Transactions({ clients, transactions, form, setForm, editing, save, edit, del, cancel }) {
+  const [type, setType] = useState('all'), [status, setStatus] = useState('all');
+  const rows = transactions.filter(t => (type === 'all' || t.type === type) && (status === 'all' || t.status === status));
+  const income = rows.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount),0), expenses = rows.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount),0);
+  return <><Card title={editing ? 'Edit Business Transaction' : 'Record Business Transaction'}><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Transaction' : 'Save Transaction'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Transaction Register"><div className="filters"><select value={type} onChange={e => setType(e.target.value)}><option>all</option><option>income</option><option>expense</option></select><select value={status} onChange={e => setStatus(e.target.value)}><option>all</option><option>pending</option><option>paid</option></select></div><div className="mini-stats"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income-expenses)}</b></div><Records rows={rows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No Client'} · {t.category || 'General'} · {fmt(t.date)}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><span className="pill">{t.status}</span><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/></Card></>;
+}
+
+function Settings({ clients, invoices, transactions, backup, restore, clear, sync, load }) {
+  return <><Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is enabled when environment variables and the snapshot table are configured.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON<input type="file" accept="application/json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])}/></label><button className="primary" onClick={sync}>Sync to Supabase</button><button onClick={load}>Load from Supabase</button><button className="danger" onClick={clear}>Clear All Data</button></Card><Card title="Data Summary"><div className="mini-stats"><b>Clients: {clients.length}</b><b>Invoices: {invoices.length}</b><b>Transactions: {transactions.length}</b></div></Card><Card title="Cloud Status"><p><b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b></p><p>{isSupabaseConfigured ? 'Your VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are available to the app.' : 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Cloudflare Pages variables.'}</p></Card></>;
+}
