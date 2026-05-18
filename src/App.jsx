@@ -53,6 +53,19 @@ async function loadSnapshot(user) {
   return { ok: true, payload: data?.payload };
 }
 const storageKeyFor = (user) => user?.id ? `${STORAGE_KEY}_${user.id}` : STORAGE_KEY;
+const useIsMobile = () => {
+  const get = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1100px)').matches;
+  const [isMobile, setIsMobile] = useState(get);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 1100px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener?.('change', update);
+    return () => mq.removeEventListener?.('change', update);
+  }, []);
+  return isMobile;
+};
 
 export default function App() {
   const [active, setActive] = useState('Dashboard');
@@ -73,6 +86,7 @@ export default function App() {
   const [storageLoaded, setStorageLoaded] = useState(false);
   const [cloudChecked, setCloudChecked] = useState(false);
   const [cloudLoading, setCloudLoading] = useState(false);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     let mounted = true;
@@ -377,6 +391,24 @@ export default function App() {
   const needsOnboarding = !business.name.trim();
   if (needsOnboarding) return <BusinessOnboarding business={business} onSave={saveBusiness} user={user} onLoadCloud={() => loadCloudData()} cloudLoading={cloudLoading} />;
 
+  if (isMobile) return <MobileShell
+    active={active}
+    setActive={setActive}
+    displayName={displayName}
+    business={business}
+    totals={totals}
+    clients={clients}
+    invoices={filteredInvoices.length ? filteredInvoices : invoices}
+    transactions={transactions}
+    notice={notice}
+    user={user}
+    userInitial={userInitial}
+    clientProps={{ clients, form: clientForm, setForm: setClientForm, editing: editingClient, save: saveClient, edit: editClient, archive: archiveClient, del: deleteClient, cancel: () => { setEditingClient(null); setClientForm(emptyClient); } }}
+    invoiceProps={{ clients: clients.filter(c => !c.archived), invoices, form: invoiceForm, setForm: setInvoiceForm, editing: editingInvoice, setLine, selectItem, addLine: () => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] })), removeLine: lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) })), save: saveInvoice, edit: editInvoice, del: id => setInvoices(p => p.filter(i => i.id !== id)), exportPDF, cancel: () => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); } }}
+    txnProps={{ clients: clients.filter(c => !c.archived), transactions, form: txnForm, setForm: setTxnForm, editing: editingTxn, save: saveTxn, edit: editTxn, del: id => setTransactions(p => p.filter(t => t.id !== id)), cancel: () => { setEditingTxn(null); setTxnForm(emptyTxn); } }}
+    settingsProps={{ business, setBusiness, saveBusiness, clients, invoices, transactions, backup, restore, clear: () => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }, user, sync: async () => showNotice((await syncSnapshot(payload, user)).message), load: async () => loadCloudData() }}
+  />;
+
   return <div className="shell">
     <aside className="sidebar">
       <div className="brand"><div className="crown">♛</div><div><h1>LG FLOW</h1><p>{business.name || 'Premium NDIS'}<br/>Operations Suite</p></div></div>
@@ -394,6 +426,101 @@ export default function App() {
       {active === 'Settings' && <Settings business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>} 
     </main>
   </div>;
+}
+
+function MobileShell({ active, setActive, displayName, business, totals, clients, invoices, transactions, notice, user, userInitial, clientProps, invoiceProps, txnProps, settingsProps }) {
+  const [quickOpen, setQuickOpen] = useState(false);
+  const mobileTabs = ['Home', 'Clients', 'Invoice', 'Finance', 'More'];
+  const go = (tab) => { setQuickOpen(false); setActive(tab); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const content = active === 'Dashboard' || active === 'Home'
+    ? <MobileHome totals={totals} clients={clients} invoices={invoices} transactions={transactions} setActive={setActive} />
+    : active === 'Clients'
+      ? <Clients {...clientProps} />
+      : active === 'Invoices' || active === 'Invoice'
+        ? <Invoices {...invoiceProps} />
+        : active === 'Transactions' || active === 'Finance'
+          ? <Transactions {...txnProps} />
+          : <Settings {...settingsProps} />;
+
+  function navTo(tab) {
+    if (tab === 'Home') go('Dashboard');
+    else if (tab === 'Invoice') go('Invoices');
+    else if (tab === 'Finance') go('Transactions');
+    else if (tab === 'More') go('Settings');
+    else go(tab);
+  }
+  function navActive(tab) {
+    if (tab === 'Home') return active === 'Dashboard' || active === 'Home';
+    if (tab === 'Invoice') return active === 'Invoices' || active === 'Invoice';
+    if (tab === 'Finance') return active === 'Transactions' || active === 'Finance';
+    if (tab === 'More') return active === 'Settings' || active === 'More';
+    return active === tab;
+  }
+
+  return <div className="mobile-shell">
+    <header className="mobile-topbar">
+      <div>
+        <span className="mobile-kicker">{business.name || 'LG Flow'}</span>
+        <h2>Hi, {displayName} 👋</h2>
+      </div>
+      <div className="mobile-user">{userInitial}</div>
+    </header>
+    {notice && <div className="notice mobile-notice">{notice}</div>}
+    <main className="mobile-main">{content}</main>
+    <button className="mobile-fab" onClick={() => setQuickOpen(v => !v)} aria-label="Quick actions">＋</button>
+    {quickOpen && <div className="quick-sheet">
+      <button onClick={() => go('Clients')}>New Client</button>
+      <button onClick={() => go('Invoices')}>New Invoice</button>
+      <button onClick={() => go('Transactions')}>Transaction</button>
+      <button onClick={() => go('Settings')}>Sync / Profile</button>
+    </div>}
+    <nav className="mobile-nav">
+      {mobileTabs.map(tab => <button key={tab} className={navActive(tab) ? 'active' : ''} onClick={() => navTo(tab)}><span>{({Home:'⌂', Clients:'♙', Invoice:'▤', Finance:'↔', More:'•••'})[tab]}</span>{tab}</button>)}
+    </nav>
+  </div>;
+}
+
+function MobileHome({ totals, clients, invoices, transactions, setActive }) {
+  const activeClients = clients.filter(c => !c.archived);
+  const expiring = activeClients
+    .map(c => ({ ...c, days: daysUntil(c.planEndDate) }))
+    .filter(c => c.days !== null && c.days >= 0 && c.days <= 60)
+    .sort((a, b) => a.days - b.days)
+    .slice(0, 3);
+  const budgetUsedPct = totals.totalBudget ? Math.min(100, Math.round((totals.invoicedTotal / totals.totalBudget) * 100)) : 0;
+  const outstandingInvoices = invoices.filter(i => i.status !== 'Paid').slice(0, 4);
+  const recentActivity = [...invoices.slice(0, 2), ...transactions.slice(0, 2)];
+  return <>
+    <section className="mobile-hero-card">
+      <span>Revenue this month</span>
+      <strong>{money(totals.income)}</strong>
+      <small>{money(totals.outstanding)} outstanding · {money(totals.net)} net</small>
+      <div className="mobile-hero-actions"><button className="primary" onClick={() => setActive('Invoices')}>+ Invoice</button><button onClick={() => setActive('Transactions')}>+ Transaction</button></div>
+    </section>
+    <section className="mobile-kpi-grid">
+      <div><small>Clients</small><b>{totals.activeClients}</b></div>
+      <div><small>Outstanding</small><b>{money(totals.outstanding)}</b></div>
+      <div><small>Budget left</small><b>{money(totals.remainingBudget)}</b></div>
+      <div><small>Plans due</small><b>{totals.expiringPlans}</b></div>
+    </section>
+    <section className="mobile-card">
+      <div className="mobile-section-head"><h3>Budget utilisation</h3><span>{budgetUsedPct}%</span></div>
+      <div className="mobile-progress"><span style={{ width: `${budgetUsedPct}%` }} /></div>
+      <p>{money(totals.invoicedTotal)} invoiced from {money(totals.totalBudget)} total NDIS budget.</p>
+    </section>
+    <section className="mobile-card attention-card">
+      <div className="mobile-section-head"><h3>Needs attention</h3><button onClick={() => setActive('Clients')}>View</button></div>
+      {expiring.length ? expiring.map(c => <div className="mobile-alert" key={c.id}><b>{c.name}</b><span>Plan expires in {c.days} days</span></div>) : <p>No NDIS plans expiring soon.</p>}
+    </section>
+    <section className="mobile-card">
+      <div className="mobile-section-head"><h3>Outstanding invoices</h3><button onClick={() => setActive('Invoices')}>All</button></div>
+      {outstandingInvoices.length ? outstandingInvoices.map(i => <div className="mobile-list-row" key={i.id}><div><b>{i.invoiceNumber}</b><small>{i.clientName} · Due {fmt(i.dueDate)}</small></div><strong>{money(i.total)}</strong></div>) : <p>No outstanding invoices.</p>}
+    </section>
+    <section className="mobile-card">
+      <div className="mobile-section-head"><h3>Recent activity</h3></div>
+      {recentActivity.length ? recentActivity.map(x => <div className="mobile-list-row" key={x.id}><div><b>{x.invoiceNumber ? `Invoice ${x.invoiceNumber}` : x.description}</b><small>{x.clientName || 'No client'}</small></div><strong>{money(x.total || x.amount || 0)}</strong></div>) : <p>No activity yet.</p>}
+    </section>
+  </>;
 }
 
 function Icon({ name }) { return <span className="nav-icon">{({Dashboard:'⌂', Clients:'♙', Invoices:'▤', Transactions:'↔', Settings:'⚙'})[name]}</span>; }
