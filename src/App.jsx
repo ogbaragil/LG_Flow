@@ -43,8 +43,13 @@ async function loadSnapshot(user) {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   if (!user?.id) return { ok: false, message: 'Please sign in first.' };
   const { data, error } = await supabase.from('app_snapshots').select('payload').eq('id', user.id).single();
-  return error ? { ok: false, message: error.message } : { ok: true, payload: data?.payload };
+  if (error) {
+    if (error.code === 'PGRST116') return { ok: true, payload: null, message: 'No cloud profile found yet.' };
+    return { ok: false, message: error.message };
+  }
+  return { ok: true, payload: data?.payload };
 }
+const storageKeyFor = (user) => user?.id ? `${STORAGE_KEY}_${user.id}` : STORAGE_KEY;
 
 export default function App() {
   const [active, setActive] = useState('Dashboard');
@@ -62,6 +67,9 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [storageLoaded, setStorageLoaded] = useState(false);
+  const [cloudChecked, setCloudChecked] = useState(false);
+  const [cloudLoading, setCloudLoading] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -71,8 +79,59 @@ export default function App() {
     return () => { mounted = false; listener?.subscription?.unsubscribe(); };
   }, []);
 
-  useEffect(() => { try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { const d = JSON.parse(raw); setBusiness({ ...EMPTY_BUSINESS, ...(d.business || {}) }); setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); } } catch {} }, []);
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify({ business, clients, invoices, transactions })); }, [business, clients, invoices, transactions]);
+  const applyPayload = (d) => {
+    setBusiness({ ...EMPTY_BUSINESS, ...(d?.business || {}) });
+    setClients(d?.clients || []);
+    setInvoices(d?.invoices || []);
+    setTransactions(d?.transactions || []);
+  };
+
+  useEffect(() => {
+    if (authLoading || !user?.id) return;
+    setStorageLoaded(false);
+    try {
+      const raw = localStorage.getItem(storageKeyFor(user));
+      if (raw) applyPayload(JSON.parse(raw));
+      else applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [] });
+    } catch {
+      applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [] });
+    } finally {
+      setStorageLoaded(true);
+    }
+  }, [authLoading, user?.id]);
+
+  useEffect(() => {
+    if (!storageLoaded || !user?.id) return;
+    localStorage.setItem(storageKeyFor(user), JSON.stringify({ business, clients, invoices, transactions }));
+  }, [storageLoaded, user?.id, business, clients, invoices, transactions]);
+
+  const loadCloudData = async ({ silent = false } = {}) => {
+    if (!user?.id) return { ok: false, message: 'Please sign in first.' };
+    setCloudLoading(true);
+    const r = await loadSnapshot(user);
+    if (r.ok && r.payload) {
+      applyPayload(r.payload);
+      if (!silent) showNotice('Cloud data loaded.');
+    } else if (!silent) {
+      showNotice(r.message || 'No cloud data found yet.');
+    }
+    setCloudLoading(false);
+    return r;
+  };
+
+  useEffect(() => {
+    if (!storageLoaded || !user?.id) return;
+    let cancelled = false;
+    setCloudChecked(false);
+    setCloudLoading(true);
+    loadSnapshot(user).then((r) => {
+      if (cancelled) return;
+      if (r.ok && r.payload) applyPayload(r.payload);
+      setCloudChecked(true);
+      setCloudLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [storageLoaded, user?.id]);
 
   const totals = useMemo(() => {
     const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
@@ -156,8 +215,10 @@ export default function App() {
     showNotice('Business profile saved.');
   };
 
+  if (!storageLoaded || !cloudChecked || cloudLoading) return <LoadingScreen message="Loading your business workspace…" />;
+
   const needsOnboarding = !business.name.trim();
-  if (needsOnboarding) return <BusinessOnboarding business={business} onSave={saveBusiness} user={user} />;
+  if (needsOnboarding) return <BusinessOnboarding business={business} onSave={saveBusiness} user={user} onLoadCloud={() => loadCloudData()} cloudLoading={cloudLoading} />;
 
   return <div className="shell">
     <aside className="sidebar">
@@ -173,7 +234,7 @@ export default function App() {
       {active === 'Clients' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
       {active === 'Invoices' && <Invoices clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => setInvoices(p => p.filter(i => i.id !== id))} exportPDF={exportPDF} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Transactions' && <Transactions clients={clients.filter(c => !c.archived)} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
-      {active === 'Settings' && <Settings business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(STORAGE_KEY); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => { const r = await loadSnapshot(user); if (r.ok && r.payload) { setBusiness({ ...EMPTY_BUSINESS, ...(r.payload.business || {}) }); setClients(r.payload.clients || []); setInvoices(r.payload.invoices || []); setTransactions(r.payload.transactions || []); showNotice('Cloud data loaded.'); } else showNotice(r.message); }}/>} 
+      {active === 'Settings' && <Settings business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>} 
     </main>
   </div>;
 }
@@ -243,7 +304,7 @@ function Settings({ business, setBusiness, saveBusiness, clients, invoices, tran
   </>;
 }
 
-function BusinessOnboarding({ business, onSave, user }) {
+function BusinessOnboarding({ business, onSave, user, onLoadCloud, cloudLoading }) {
   const [draft, setDraft] = useState({ ...EMPTY_BUSINESS, ...business });
   const updateDraft = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
 
@@ -253,6 +314,7 @@ function BusinessOnboarding({ business, onSave, user }) {
       <h1>Set up your business</h1>
       <p>Personalise LG Flow for your invoices, payment details and workspace branding.</p>
       <div className="auth-glass"><b>{user?.email || 'Your account'}</b><span>This profile is saved in your private cloud snapshot.</span></div>
+      <button className="ghost" type="button" onClick={onLoadCloud} disabled={cloudLoading}>{cloudLoading ? 'Loading cloud…' : 'Load existing cloud profile'}</button>
     </section>
     <form className="auth-card" onSubmit={e => { e.preventDefault(); onSave(draft); }}>
       <h2>Business onboarding</h2>
@@ -268,8 +330,8 @@ function BusinessOnboarding({ business, onSave, user }) {
   </div>;
 }
 
-function LoadingScreen() {
-  return <div className="auth-shell"><div className="auth-card"><div className="crown">♛</div><h1>LG FLOW</h1><p>Securing your workspace…</p></div></div>;
+function LoadingScreen({ message = 'Securing your workspace…' }) {
+  return <div className="auth-shell"><div className="auth-card"><div className="crown">♛</div><h1>LG FLOW</h1><p>{message}</p></div></div>;
 }
 
 function AuthGate() {
