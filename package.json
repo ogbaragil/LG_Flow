@@ -1,1 +1,19 @@
-{"name":"lg-flow-pwa","private":true,"version":"1.0.0","type":"module","scripts":{"dev":"vite --host 0.0.0.0","build":"vite build","preview":"vite preview","deploy:cloudflare":"npm run build && wrangler pages deploy dist --project-name lg-flow-pwa"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest","@supabase/supabase-js":"latest","jspdf":"latest"},"devDependencies":{"wrangler":"latest"}}
+{
+  "name": "lg-flow-pwa",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "@supabase/supabase-js": "latest",
+    "jspdf": "latest"
+  }
+}
