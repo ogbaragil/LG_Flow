@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
-import { supabase } from './supabaseClient';
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 const STORAGE_KEY = 'lg_flow_pwa_v2_premium';
 const TABS = ['Dashboard', 'Clients', 'Invoices', 'Transactions', 'Settings'];
@@ -27,16 +27,21 @@ const emptyClient = { name: '', ndisNumber: '', email: '', phone: '', address: '
 const emptyLine = () => ({ id: makeId('line'), itemLabel: ITEMS[0].label, serviceDate: todayISO(), unitType: 'hours', quantity: '1', rate: String(ITEMS[0].rate) });
 const emptyInvoice = () => ({ clientId: '', dueDate: addDaysISO(7), notes: '', lines: [emptyLine()] });
 const emptyTxn = { clientId: '', type: 'expense', status: 'pending', category: '', description: '', amount: '', date: todayISO() };
-const isSupabaseConfigured = Boolean(supabase);
-
-async function syncSnapshot(payload) {
+async function syncSnapshot(payload, user) {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
-  const { error } = await supabase.from('app_snapshots').upsert({ id: 'default', payload, updated_at: new Date().toISOString() });
+  if (!user?.id) return { ok: false, message: 'Please sign in first.' };
+  const { error } = await supabase.from('app_snapshots').upsert({
+    id: user.id,
+    user_id: user.id,
+    payload,
+    updated_at: new Date().toISOString(),
+  });
   return error ? { ok: false, message: error.message } : { ok: true, message: 'Cloud sync complete.' };
 }
-async function loadSnapshot() {
+async function loadSnapshot(user) {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
-  const { data, error } = await supabase.from('app_snapshots').select('payload').eq('id', 'default').single();
+  if (!user?.id) return { ok: false, message: 'Please sign in first.' };
+  const { data, error } = await supabase.from('app_snapshots').select('payload').eq('id', user.id).single();
   return error ? { ok: false, message: error.message } : { ok: true, payload: data?.payload };
 }
 
@@ -53,6 +58,16 @@ export default function App() {
   const [editingTxn, setEditingTxn] = useState(null);
   const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!supabase) { setAuthLoading(false); return; }
+    supabase.auth.getSession().then(({ data }) => { if (mounted) { setUser(data.session?.user || null); setAuthLoading(false); } });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { setUser(session?.user || null); });
+    return () => { mounted = false; listener?.subscription?.unsubscribe(); };
+  }, []);
 
   useEffect(() => { try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { const d = JSON.parse(raw); setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); } } catch {} }, []);
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify({ clients, invoices, transactions })); }, [clients, invoices, transactions]);
@@ -116,6 +131,9 @@ export default function App() {
   };
   const editTxn = (t) => { setTxnForm({ clientId: t.clientId || '', type: t.type || 'expense', status: t.status || 'paid', category: t.category || '', description: t.description || '', amount: String(t.amount || ''), date: t.date || todayISO() }); setEditingTxn(t.id); setActive('Transactions'); window.scrollTo(0, 0); };
 
+  if (authLoading) return <LoadingScreen />;
+  if (!user) return <AuthGate />;
+
   const backup = () => { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), data: payload }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'lg-flow-backup.json'; a.click(); };
   const restore = async (file) => { try { const parsed = JSON.parse(await file.text()); const d = parsed.data || parsed; setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); showNotice('Backup restored.'); } catch { alert('Invalid backup JSON.'); } };
 
@@ -124,16 +142,16 @@ export default function App() {
       <div className="brand"><div className="crown">♛</div><div><h1>LG FLOW</h1><p>Premium NDIS<br/>Operations Suite</p></div></div>
       <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
       <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'All systems operational' : 'Cloud sync disabled'}</small></div>
-      <div className="profile-card"><div className="avatar">LG</div><div><b>LG Support Services</b><small>NDIS Provider</small></div></div>
+      <div className="profile-card"><div className="avatar">{(user.email || 'LG').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><h2>Welcome back, Gil 👋</h2><p>Here’s what’s happening with your business today.</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)}/><kbd>⌘K</kbd></label><button className="icon-btn">◐</button><div className="user-badge">G</div></div></header>
+      <header className="topbar"><div><h2>Welcome back, Gil 👋</h2><p>Here’s what’s happening with your business today.</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)}/><kbd>⌘K</kbd></label><button className="icon-btn">◐</button><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button><div className="user-badge">{(user.email || 'G').slice(0,1).toUpperCase()}</div></div></header>
       {notice && <div className="notice">{notice}</div>}
       {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} setActive={setActive}/>} 
       {active === 'Clients' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
       {active === 'Invoices' && <Invoices clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => setInvoices(p => p.filter(i => i.id !== id))} exportPDF={exportPDF} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Transactions' && <Transactions clients={clients.filter(c => !c.archived)} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
-      {active === 'Settings' && <Settings clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(STORAGE_KEY); } }} sync={async () => showNotice((await syncSnapshot(payload)).message)} load={async () => { const r = await loadSnapshot(); if (r.ok && r.payload) { setClients(r.payload.clients || []); setInvoices(r.payload.invoices || []); setTransactions(r.payload.transactions || []); showNotice('Cloud data loaded.'); } else showNotice(r.message); }}/>} 
+      {active === 'Settings' && <Settings clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(STORAGE_KEY); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => { const r = await loadSnapshot(user); if (r.ok && r.payload) { setClients(r.payload.clients || []); setInvoices(r.payload.invoices || []); setTransactions(r.payload.transactions || []); showNotice('Cloud data loaded.'); } else showNotice(r.message); }}/>} 
     </main>
   </div>;
 }
@@ -172,6 +190,49 @@ function Transactions({ clients, transactions, form, setForm, editing, save, edi
   return <><Card title={editing ? 'Edit Business Transaction' : 'Record Business Transaction'}><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Transaction' : 'Save Transaction'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Transaction Register"><div className="filters"><select value={type} onChange={e => setType(e.target.value)}><option>all</option><option>income</option><option>expense</option></select><select value={status} onChange={e => setStatus(e.target.value)}><option>all</option><option>pending</option><option>paid</option></select></div><div className="mini-stats"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income-expenses)}</b></div><Records rows={rows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No Client'} · {t.category || 'General'} · {fmt(t.date)}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><span className="pill">{t.status}</span><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/></Card></>;
 }
 
-function Settings({ clients, invoices, transactions, backup, restore, clear, sync, load }) {
-  return <><Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is enabled when environment variables and the snapshot table are configured.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON<input type="file" accept="application/json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])}/></label><button className="primary" onClick={sync}>Sync to Supabase</button><button onClick={load}>Load from Supabase</button><button className="danger" onClick={clear}>Clear All Data</button></Card><Card title="Data Summary"><div className="mini-stats"><b>Clients: {clients.length}</b><b>Invoices: {invoices.length}</b><b>Transactions: {transactions.length}</b></div></Card><Card title="Cloud Status"><p><b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b></p><p>{isSupabaseConfigured ? 'Your VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are available to the app.' : 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Cloudflare Pages variables.'}</p></Card></>;
+function Settings({ clients, invoices, transactions, backup, restore, clear, sync, load, user }) {
+  return <><Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is now tied to your signed-in account.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON<input type="file" accept="application/json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])}/></label><button className="primary" onClick={sync}>Sync to Supabase</button><button onClick={load}>Load from Supabase</button><button className="danger" onClick={clear}>Clear All Data</button></Card><Card title="Data Summary"><div className="mini-stats"><b>Clients: {clients.length}</b><b>Invoices: {invoices.length}</b><b>Transactions: {transactions.length}</b></div></Card><Card title="Cloud Status"><p><b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b></p><p>{isSupabaseConfigured ? `Signed in as ${user?.email || 'your account'}. Your cloud snapshot is private to this login.` : 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Cloudflare Pages variables.'}</p><button onClick={async () => supabase && supabase.auth.signOut()}>Sign out</button></Card></>;
+}
+
+function LoadingScreen() {
+  return <div className="auth-shell"><div className="auth-card"><div className="crown">♛</div><h1>LG FLOW</h1><p>Securing your workspace…</p></div></div>;
+}
+
+function AuthGate() {
+  const [mode, setMode] = useState('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!supabase) { setMessage('Supabase is not configured.'); return; }
+    if (!email || !password) { setMessage('Enter your email and password.'); return; }
+    setBusy(true); setMessage('');
+    const result = mode === 'signup'
+      ? await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName || 'LG Flow User' } } })
+      : await supabase.auth.signInWithPassword({ email, password });
+    setBusy(false);
+    if (result.error) setMessage(result.error.message);
+    else if (mode === 'signup' && !result.data.session) setMessage('Account created. Check your email to confirm your sign up, then sign in.');
+    else setMessage('Signed in. Loading workspace…');
+  }
+
+  return <div className="auth-shell">
+    <section className="auth-hero"><div className="crown">♛</div><h1>LG FLOW</h1><p>Premium NDIS Operations Suite</p><div className="auth-glass"><b>Private cloud workspace</b><span>Clients, invoices, transactions and snapshots protected by Supabase Auth.</span></div></section>
+    <form className="auth-card" onSubmit={submit}>
+      <h2>{mode === 'signup' ? 'Create your account' : 'Welcome back'}</h2>
+      <p>{mode === 'signup' ? 'Start a secure LG Flow workspace.' : 'Sign in to continue to your dashboard.'}</p>
+      {mode === 'signup' && <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />}
+      <Field label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
+      <Field label="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
+      {message && <div className="auth-message">{message}</div>}
+      <button className="primary" disabled={busy}>{busy ? 'Please wait…' : mode === 'signup' ? 'Sign up' : 'Sign in'}</button>
+      <button type="button" className="text-link auth-switch" onClick={() => { setMode(mode === 'signup' ? 'signin' : 'signup'); setMessage(''); }}>
+        {mode === 'signup' ? 'Already have an account? Sign in' : 'Need an account? Sign up'}
+      </button>
+    </form>
+  </div>;
 }

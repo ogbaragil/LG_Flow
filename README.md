@@ -57,3 +57,12 @@ dist
 
 - `docs/original-react-native-reference.js` is included as a reference copy of the uploaded app source.
 - The PWA uses web equivalents for Expo features: localStorage for AsyncStorage, file download/upload for backup, and jsPDF for invoice PDF export.
+
+## Supabase Auth setup
+
+1. In Supabase, open **Authentication → Providers → Email** and enable Email sign ups/sign ins.
+2. In **Authentication → URL Configuration**, add your Cloudflare Pages URL to Site URL and Redirect URLs.
+3. Run `supabase/auth-app-snapshots.sql` in the Supabase SQL Editor.
+4. Redeploy the app on Cloudflare Pages.
+
+Cloud sync is now private per signed-in Supabase user.
