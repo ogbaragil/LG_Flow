@@ -1,16 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
-import { supabase, isSupabaseConfigured } from './supabaseClient';
+import { supabase, isSupabaseConfigured, supabaseConfigSource } from './supabaseClient';
 
 const STORAGE_KEY = 'lg_flow_pwa_v2_premium';
 const TABS = ['Dashboard', 'Clients', 'Invoices', 'Transactions', 'Settings'];
-const BUSINESS = {
-  name: "Life's Good Disability Services",
-  abn: 'ABN 616 600 252 94',
-  email: 'hola@lgds.com.au',
-  phone: '0450 696 350',
-  address: '36 Sankuru Road, Truganina',
-  paymentDetails: "Life's Good Disability Services\nBank: Common Wealth Bank\nBSB: 067 873\nAccount: 1866 9873",
+const EMPTY_BUSINESS = {
+  name: '',
+  abn: '',
+  email: '',
+  phone: '',
+  address: '',
+  paymentDetails: '',
 };
 const ITEMS = [
   { label: 'Self-Care Support', rate: 70.23, unitType: 'hours' },
@@ -50,6 +50,7 @@ export default function App() {
   const [clients, setClients] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [business, setBusiness] = useState(EMPTY_BUSINESS);
   const [clientForm, setClientForm] = useState(emptyClient);
   const [invoiceForm, setInvoiceForm] = useState(emptyInvoice());
   const [txnForm, setTxnForm] = useState(emptyTxn);
@@ -69,8 +70,8 @@ export default function App() {
     return () => { mounted = false; listener?.subscription?.unsubscribe(); };
   }, []);
 
-  useEffect(() => { try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { const d = JSON.parse(raw); setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); } } catch {} }, []);
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify({ clients, invoices, transactions })); }, [clients, invoices, transactions]);
+  useEffect(() => { try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { const d = JSON.parse(raw); setBusiness({ ...EMPTY_BUSINESS, ...(d.business || {}) }); setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); } } catch {} }, []);
+  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify({ business, clients, invoices, transactions })); }, [business, clients, invoices, transactions]);
 
   const totals = useMemo(() => {
     const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
@@ -80,7 +81,7 @@ export default function App() {
   }, [clients, invoices, transactions]);
 
   const filteredInvoices = invoices.filter(i => `${i.invoiceNumber} ${i.clientName}`.toLowerCase().includes(query.toLowerCase())).slice(0, 6);
-  const payload = { clients, invoices, transactions };
+  const payload = { business, clients, invoices, transactions };
   const showNotice = (message) => { setNotice(message); setTimeout(() => setNotice(''), 4200); };
 
   const saveClient = () => {
@@ -114,10 +115,10 @@ export default function App() {
   const exportPDF = (inv) => {
     const doc = new jsPDF(); let y = 18;
     doc.setFontSize(22); doc.text('Invoice', 14, y); y += 9; doc.setFontSize(10);
-    [BUSINESS.name, BUSINESS.abn, BUSINESS.address, BUSINESS.phone, BUSINESS.email, '', `Invoice No: ${inv.invoiceNumber}`, `Issue Date: ${fmt(inv.issueDate)}`, `Due Date: ${fmt(inv.dueDate)}`, '', `Billed To: ${inv.clientName}`, inv.ndisNumber ? `NDIS: ${inv.ndisNumber}` : '', inv.clientAddress || '', '', 'Payment Details:', ...BUSINESS.paymentDetails.split('\n')].filter(Boolean).forEach(line => { doc.text(String(line), 14, y); y += 6; });
+    [business.name, business.abn, business.address, business.phone, business.email, '', `Invoice No: ${inv.invoiceNumber}`, `Issue Date: ${fmt(inv.issueDate)}`, `Due Date: ${fmt(inv.dueDate)}`, '', `Billed To: ${inv.clientName}`, inv.ndisNumber ? `NDIS: ${inv.ndisNumber}` : '', inv.clientAddress || '', '', 'Payment Details:', ...(business.paymentDetails || '').split('\n')].filter(Boolean).forEach(line => { doc.text(String(line), 14, y); y += 6; });
     y += 4; doc.text('Services', 14, y); y += 8;
     inv.lines.forEach((l, i) => { doc.text(`${i + 1}. ${fmt(l.serviceDate)} - ${l.itemLabel} - ${l.quantity} ${l.unitType} @ ${money(l.rate)} = ${money(l.lineTotal)}`, 14, y); y += 7; if (y > 280) { doc.addPage(); y = 18; } });
-    y += 5; doc.setFontSize(14); doc.text(`Total: ${money(inv.total)}`, 14, y); doc.save(`LGDS_${inv.clientName}_${inv.invoiceNumber}.pdf`);
+    y += 5; doc.setFontSize(14); doc.text(`Total: ${money(inv.total)}`, 14, y); doc.save(`${(business.name || 'LG-Flow').replace(/[^a-z0-9]+/gi, '-')}_${inv.clientName}_${inv.invoiceNumber}.pdf`);
   };
 
   const saveTxn = () => {
@@ -134,24 +135,39 @@ export default function App() {
   if (authLoading) return <LoadingScreen />;
   if (!user) return <AuthGate />;
 
+  const displayName =
+    user?.user_metadata?.full_name ||
+    user?.email?.split('@')[0] ||
+    'there';
+  const userInitial = (displayName || user?.email || 'U').slice(0, 1).toUpperCase();
+
   const backup = () => { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), data: payload }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'lg-flow-backup.json'; a.click(); };
-  const restore = async (file) => { try { const parsed = JSON.parse(await file.text()); const d = parsed.data || parsed; setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); showNotice('Backup restored.'); } catch { alert('Invalid backup JSON.'); } };
+  const restore = async (file) => { try { const parsed = JSON.parse(await file.text()); const d = parsed.data || parsed; setBusiness({ ...EMPTY_BUSINESS, ...(d.business || {}) }); setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); showNotice('Backup restored.'); } catch { alert('Invalid backup JSON.'); } };
+
+  const saveBusiness = (nextBusiness) => {
+    if (!nextBusiness.name.trim()) return alert('Please enter your business name.');
+    setBusiness({ ...EMPTY_BUSINESS, ...nextBusiness });
+    showNotice('Business profile saved.');
+  };
+
+  const needsOnboarding = !business.name.trim();
+  if (needsOnboarding) return <BusinessOnboarding business={business} onSave={saveBusiness} user={user} />;
 
   return <div className="shell">
     <aside className="sidebar">
-      <div className="brand"><div className="crown">♛</div><div><h1>LG FLOW</h1><p>Premium NDIS<br/>Operations Suite</p></div></div>
+      <div className="brand"><div className="crown">♛</div><div><h1>LG FLOW</h1><p>{business.name || 'Premium NDIS'}<br/>Operations Suite</p></div></div>
       <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
       <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'All systems operational' : 'Cloud sync disabled'}</small></div>
       <div className="profile-card"><div className="avatar">{(user.email || 'LG').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><h2>Welcome back, Gil 👋</h2><p>Here’s what’s happening with your business today.</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)}/><kbd>⌘K</kbd></label><button className="icon-btn">◐</button><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button><div className="user-badge">{(user.email || 'G').slice(0,1).toUpperCase()}</div></div></header>
+      <header className="topbar"><div><h2>Welcome back, {displayName} 👋</h2><p>Here’s what’s happening with your business today.</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)}/><kbd>⌘K</kbd></label><button className="icon-btn">◐</button><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button><div className="user-badge">{userInitial}</div></div></header>
       {notice && <div className="notice">{notice}</div>}
       {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} setActive={setActive}/>} 
       {active === 'Clients' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
       {active === 'Invoices' && <Invoices clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => setInvoices(p => p.filter(i => i.id !== id))} exportPDF={exportPDF} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Transactions' && <Transactions clients={clients.filter(c => !c.archived)} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
-      {active === 'Settings' && <Settings clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(STORAGE_KEY); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => { const r = await loadSnapshot(user); if (r.ok && r.payload) { setClients(r.payload.clients || []); setInvoices(r.payload.invoices || []); setTransactions(r.payload.transactions || []); showNotice('Cloud data loaded.'); } else showNotice(r.message); }}/>} 
+      {active === 'Settings' && <Settings business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(STORAGE_KEY); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => { const r = await loadSnapshot(user); if (r.ok && r.payload) { setBusiness({ ...EMPTY_BUSINESS, ...(r.payload.business || {}) }); setClients(r.payload.clients || []); setInvoices(r.payload.invoices || []); setTransactions(r.payload.transactions || []); showNotice('Cloud data loaded.'); } else showNotice(r.message); }}/>} 
     </main>
   </div>;
 }
@@ -190,8 +206,57 @@ function Transactions({ clients, transactions, form, setForm, editing, save, edi
   return <><Card title={editing ? 'Edit Business Transaction' : 'Record Business Transaction'}><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Transaction' : 'Save Transaction'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Transaction Register"><div className="filters"><select value={type} onChange={e => setType(e.target.value)}><option>all</option><option>income</option><option>expense</option></select><select value={status} onChange={e => setStatus(e.target.value)}><option>all</option><option>pending</option><option>paid</option></select></div><div className="mini-stats"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income-expenses)}</b></div><Records rows={rows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No Client'} · {t.category || 'General'} · {fmt(t.date)}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><span className="pill">{t.status}</span><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/></Card></>;
 }
 
-function Settings({ clients, invoices, transactions, backup, restore, clear, sync, load, user }) {
-  return <><Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is now tied to your signed-in account.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON<input type="file" accept="application/json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])}/></label><button className="primary" onClick={sync}>Sync to Supabase</button><button onClick={load}>Load from Supabase</button><button className="danger" onClick={clear}>Clear All Data</button></Card><Card title="Data Summary"><div className="mini-stats"><b>Clients: {clients.length}</b><b>Invoices: {invoices.length}</b><b>Transactions: {transactions.length}</b></div></Card><Card title="Cloud Status"><p><b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b></p><p>{isSupabaseConfigured ? `Signed in as ${user?.email || 'your account'}. Your cloud snapshot is private to this login.` : 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Cloudflare Pages variables.'}</p><button onClick={async () => supabase && supabase.auth.signOut()}>Sign out</button></Card></>;
+function Settings({ business, setBusiness, saveBusiness, clients, invoices, transactions, backup, restore, clear, sync, load, user }) {
+  const [draft, setDraft] = useState({ ...EMPTY_BUSINESS, ...business });
+
+  useEffect(() => {
+    setDraft({ ...EMPTY_BUSINESS, ...business });
+  }, [business]);
+
+  const updateDraft = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
+
+  return <>
+    <Card title="Business Profile">
+      <p>This information is private to the signed-in workspace and appears on exported invoices.</p>
+      <div className="grid">
+        <Field label="Business Name" value={draft.name} onChange={e => updateDraft('name', e.target.value)} />
+        <Field label="ABN / Registration" value={draft.abn} onChange={e => updateDraft('abn', e.target.value)} />
+        <Field label="Business Email" type="email" value={draft.email} onChange={e => updateDraft('email', e.target.value)} />
+        <Field label="Business Phone" value={draft.phone} onChange={e => updateDraft('phone', e.target.value)} />
+        <Field label="Business Address" multiline value={draft.address} onChange={e => updateDraft('address', e.target.value)} />
+        <Field label="Payment Details" multiline value={draft.paymentDetails} onChange={e => updateDraft('paymentDetails', e.target.value)} placeholder={"Bank: Your Bank\nBSB: 000 000\nAccount: 0000 0000"} />
+      </div>
+      <button className="primary" onClick={() => saveBusiness(draft)}>Save Business Profile</button>
+    </Card>
+    <Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is tied to your signed-in account and includes your business profile.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON<input type="file" accept="application/json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])}/></label><button className="primary" onClick={sync}>Sync to Supabase</button><button onClick={load}>Load from Supabase</button><button className="danger" onClick={clear}>Clear All Data</button></Card>
+    <Card title="Data Summary"><div className="mini-stats"><b>Business: {business.name || 'Not set'}</b><b>Clients: {clients.length}</b><b>Invoices: {invoices.length}</b><b>Transactions: {transactions.length}</b></div></Card>
+    <Card title="Cloud Status"><p><b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b></p><p>{isSupabaseConfigured ? `Signed in as ${user?.email || 'your account'}. Your cloud snapshot is private to this login.` : 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Cloudflare Pages variables, public/supabase-config.js, or the app setup screen.'}</p><p><small>Config source: {supabaseConfigSource}</small></p><button onClick={async () => supabase && supabase.auth.signOut()}>Sign out</button></Card>
+  </>;
+}
+
+function BusinessOnboarding({ business, onSave, user }) {
+  const [draft, setDraft] = useState({ ...EMPTY_BUSINESS, ...business });
+  const updateDraft = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
+
+  return <div className="auth-shell">
+    <section className="auth-hero">
+      <div className="crown">♛</div>
+      <h1>Set up your business</h1>
+      <p>Personalise LG Flow for your invoices, payment details and workspace branding.</p>
+      <div className="auth-glass"><b>{user?.email || 'Your account'}</b><span>This profile is saved in your private cloud snapshot.</span></div>
+    </section>
+    <form className="auth-card" onSubmit={e => { e.preventDefault(); onSave(draft); }}>
+      <h2>Business onboarding</h2>
+      <p>Enter the details you want shown on invoices. You can edit these later in Settings.</p>
+      <Field label="Business Name" value={draft.name} onChange={e => updateDraft('name', e.target.value)} placeholder="Your business name" />
+      <Field label="ABN / Registration" value={draft.abn} onChange={e => updateDraft('abn', e.target.value)} placeholder="ABN 000 000 000 00" />
+      <Field label="Business Email" type="email" value={draft.email} onChange={e => updateDraft('email', e.target.value)} placeholder="hello@yourbusiness.com" />
+      <Field label="Business Phone" value={draft.phone} onChange={e => updateDraft('phone', e.target.value)} placeholder="04xx xxx xxx" />
+      <Field label="Business Address" multiline value={draft.address} onChange={e => updateDraft('address', e.target.value)} placeholder="Street, suburb, state" />
+      <Field label="Payment Details" multiline value={draft.paymentDetails} onChange={e => updateDraft('paymentDetails', e.target.value)} placeholder={"Bank: Your Bank\nBSB: 000 000\nAccount: 0000 0000"} />
+      <button className="primary">Complete Setup</button>
+    </form>
+  </div>;
 }
 
 function LoadingScreen() {
@@ -205,6 +270,35 @@ function AuthGate() {
   const [fullName, setFullName] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [setupUrl, setSetupUrl] = useState('');
+  const [setupAnonKey, setSetupAnonKey] = useState('');
+
+  function saveSupabaseSetup(e) {
+    e.preventDefault();
+    if (!setupUrl || !setupAnonKey) {
+      setMessage('Enter both Supabase URL and anon public key.');
+      return;
+    }
+    window.localStorage.setItem('lg_flow_supabase_config', JSON.stringify({
+      url: setupUrl.trim().replace(/\/rest\/v1\/?$/, ''),
+      anonKey: setupAnonKey.trim(),
+    }));
+    window.location.reload();
+  }
+
+  if (!supabase) {
+    return <div className="auth-shell">
+      <section className="auth-hero"><div className="crown">♛</div><h1>LG FLOW</h1><p>Premium NDIS Operations Suite</p><div className="auth-glass"><b>Supabase setup required</b><span>Paste your new LG Flow project URL and anon public key once. The app will save it in this browser.</span></div></section>
+      <form className="auth-card" onSubmit={saveSupabaseSetup}>
+        <h2>Connect Supabase</h2>
+        <p>You can also set these in Cloudflare Pages or public/supabase-config.js.</p>
+        <Field label="Supabase Project URL" value={setupUrl} onChange={e => setSetupUrl(e.target.value)} placeholder="https://your-project.supabase.co" />
+        <Field label="Anon public key" value={setupAnonKey} onChange={e => setSetupAnonKey(e.target.value)} placeholder="eyJ..." />
+        {message && <div className="auth-message">{message}</div>}
+        <button className="primary">Save & Reload</button>
+      </form>
+    </div>;
+  }
 
   async function submit(e) {
     e.preventDefault();

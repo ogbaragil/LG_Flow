@@ -1,7 +1,7 @@
 {
   "name": "LG Flow Premium NDIS Operations Suite",
   "short_name": "LG Flow",
-  "description": "Clients, invoices, income and expenses for Life's Good Disability Services.",
+  "description": "Premium NDIS operations suite for clients, invoices, transactions and cloud sync.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#05070b",
