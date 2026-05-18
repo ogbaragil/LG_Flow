@@ -53,19 +53,6 @@ async function loadSnapshot(user) {
   return { ok: true, payload: data?.payload };
 }
 const storageKeyFor = (user) => user?.id ? `${STORAGE_KEY}_${user.id}` : STORAGE_KEY;
-const useIsMobile = () => {
-  const get = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1100px)').matches;
-  const [isMobile, setIsMobile] = useState(get);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(max-width: 1100px)');
-    const update = () => setIsMobile(mq.matches);
-    update();
-    mq.addEventListener?.('change', update);
-    return () => mq.removeEventListener?.('change', update);
-  }, []);
-  return isMobile;
-};
 
 export default function App() {
   const [active, setActive] = useState('Dashboard');
@@ -86,7 +73,6 @@ export default function App() {
   const [storageLoaded, setStorageLoaded] = useState(false);
   const [cloudChecked, setCloudChecked] = useState(false);
   const [cloudLoading, setCloudLoading] = useState(false);
-  const isMobile = useIsMobile();
 
   useEffect(() => {
     let mounted = true;
@@ -391,25 +377,7 @@ export default function App() {
   const needsOnboarding = !business.name.trim();
   if (needsOnboarding) return <BusinessOnboarding business={business} onSave={saveBusiness} user={user} onLoadCloud={() => loadCloudData()} cloudLoading={cloudLoading} />;
 
-  if (isMobile) return <MobileShell
-    active={active}
-    setActive={setActive}
-    displayName={displayName}
-    business={business}
-    totals={totals}
-    clients={clients}
-    invoices={filteredInvoices.length ? filteredInvoices : invoices}
-    transactions={transactions}
-    notice={notice}
-    user={user}
-    userInitial={userInitial}
-    clientProps={{ clients, form: clientForm, setForm: setClientForm, editing: editingClient, save: saveClient, edit: editClient, archive: archiveClient, del: deleteClient, cancel: () => { setEditingClient(null); setClientForm(emptyClient); } }}
-    invoiceProps={{ clients: clients.filter(c => !c.archived), invoices, form: invoiceForm, setForm: setInvoiceForm, editing: editingInvoice, setLine, selectItem, addLine: () => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] })), removeLine: lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) })), save: saveInvoice, edit: editInvoice, del: id => setInvoices(p => p.filter(i => i.id !== id)), exportPDF, cancel: () => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); } }}
-    txnProps={{ clients: clients.filter(c => !c.archived), transactions, form: txnForm, setForm: setTxnForm, editing: editingTxn, save: saveTxn, edit: editTxn, del: id => setTransactions(p => p.filter(t => t.id !== id)), cancel: () => { setEditingTxn(null); setTxnForm(emptyTxn); } }}
-    settingsProps={{ business, setBusiness, saveBusiness, clients, invoices, transactions, backup, restore, clear: () => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }, user, sync: async () => showNotice((await syncSnapshot(payload, user)).message), load: async () => loadCloudData() }}
-  />;
-
-  return <div className="shell">
+  return <><div className="shell desktop-shell">
     <aside className="sidebar">
       <div className="brand"><div className="crown">♛</div><div><h1>LG FLOW</h1><p>{business.name || 'Premium NDIS'}<br/>Operations Suite</p></div></div>
       <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
@@ -425,102 +393,155 @@ export default function App() {
       {active === 'Transactions' && <Transactions clients={clients.filter(c => !c.archived)} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
       {active === 'Settings' && <Settings business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>} 
     </main>
-  </div>;
+  </div>
+  <MobileShell
+    active={active}
+    setActive={setActive}
+    displayName={displayName}
+    business={business}
+    totals={totals}
+    clients={clients}
+    invoices={invoices}
+    transactions={transactions}
+    notice={notice}
+    query={query}
+    setQuery={setQuery}
+    user={user}
+    clientForm={clientForm}
+    setClientForm={setClientForm}
+    editingClient={editingClient}
+    saveClient={saveClient}
+    editClient={editClient}
+    archiveClient={archiveClient}
+    deleteClient={deleteClient}
+    cancelClient={() => { setEditingClient(null); setClientForm(emptyClient); }}
+    invoiceForm={invoiceForm}
+    setInvoiceForm={setInvoiceForm}
+    editingInvoice={editingInvoice}
+    setLine={setLine}
+    selectItem={selectItem}
+    addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))}
+    removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))}
+    saveInvoice={saveInvoice}
+    editInvoice={editInvoice}
+    deleteInvoice={id => setInvoices(p => p.filter(i => i.id !== id))}
+    exportPDF={exportPDF}
+    cancelInvoice={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}
+    txnForm={txnForm}
+    setTxnForm={setTxnForm}
+    editingTxn={editingTxn}
+    saveTxn={saveTxn}
+    editTxn={editTxn}
+    deleteTxn={id => setTransactions(p => p.filter(t => t.id !== id))}
+    cancelTxn={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}
+    settings={<Settings business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>}
+  />
+</>;
 }
 
-function MobileShell({ active, setActive, displayName, business, totals, clients, invoices, transactions, notice, user, userInitial, clientProps, invoiceProps, txnProps, settingsProps }) {
-  const [quickOpen, setQuickOpen] = useState(false);
-  const mobileTabs = ['Home', 'Clients', 'Invoice', 'Finance', 'More'];
-  const go = (tab) => { setQuickOpen(false); setActive(tab); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const content = active === 'Dashboard' || active === 'Home'
-    ? <MobileHome totals={totals} clients={clients} invoices={invoices} transactions={transactions} setActive={setActive} />
-    : active === 'Clients'
-      ? <Clients {...clientProps} />
-      : active === 'Invoices' || active === 'Invoice'
-        ? <Invoices {...invoiceProps} />
-        : active === 'Transactions' || active === 'Finance'
-          ? <Transactions {...txnProps} />
-          : <Settings {...settingsProps} />;
-
-  function navTo(tab) {
-    if (tab === 'Home') go('Dashboard');
-    else if (tab === 'Invoice') go('Invoices');
-    else if (tab === 'Finance') go('Transactions');
-    else if (tab === 'More') go('Settings');
-    else go(tab);
-  }
-  function navActive(tab) {
-    if (tab === 'Home') return active === 'Dashboard' || active === 'Home';
-    if (tab === 'Invoice') return active === 'Invoices' || active === 'Invoice';
-    if (tab === 'Finance') return active === 'Transactions' || active === 'Finance';
-    if (tab === 'More') return active === 'Settings' || active === 'More';
-    return active === tab;
-  }
-
+function MobileShell({ active, setActive, displayName, business, totals, clients, invoices, transactions, notice, query, setQuery, user, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+  const [fabOpen, setFabOpen] = useState(false);
+  const firstName = String(displayName || 'there').split(' ')[0];
+  const activeClients = clients.filter(c => !c.archived);
+  const alerts = getMobileAlerts({ clients, invoices, totals });
+  const recentInvoices = invoices.slice(0, 4);
+  const openAction = (tab) => { setFabOpen(false); setActive(tab); setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 20); };
   return <div className="mobile-shell">
-    <header className="mobile-topbar">
-      <div>
-        <span className="mobile-kicker">{business.name || 'LG Flow'}</span>
-        <h2>Hi, {displayName} 👋</h2>
-      </div>
-      <div className="mobile-user">{userInitial}</div>
+    <header className="mobile-top">
+      <div className="mobile-brand"><span>♛</span><div><b>LG FLOW</b><small>{business.name || 'NDIS Operations'}</small></div></div>
+      <button className="mobile-signout" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button>
     </header>
-    {notice && <div className="notice mobile-notice">{notice}</div>}
-    <main className="mobile-main">{content}</main>
-    <button className="mobile-fab" onClick={() => setQuickOpen(v => !v)} aria-label="Quick actions">＋</button>
-    {quickOpen && <div className="quick-sheet">
-      <button onClick={() => go('Clients')}>New Client</button>
-      <button onClick={() => go('Invoices')}>New Invoice</button>
-      <button onClick={() => go('Transactions')}>Transaction</button>
-      <button onClick={() => go('Settings')}>Sync / Profile</button>
-    </div>}
-    <nav className="mobile-nav">
-      {mobileTabs.map(tab => <button key={tab} className={navActive(tab) ? 'active' : ''} onClick={() => navTo(tab)}><span>{({Home:'⌂', Clients:'♙', Invoice:'▤', Finance:'↔', More:'•••'})[tab]}</span>{tab}</button>)}
+    <main className="mobile-main">
+      {notice && <div className="notice mobile-notice">{notice}</div>}
+      {active === 'Dashboard' && <MobileHome firstName={firstName} totals={totals} alerts={alerts} invoices={recentInvoices} clients={activeClients} setActive={setActive} />}
+      {active === 'Clients' && <MobileClients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={cancelClient} />}
+      {active === 'Invoices' && <MobileInvoices clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} cancel={cancelInvoice} query={query} setQuery={setQuery} />}
+      {active === 'Transactions' && <MobileFinance clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
+      {active === 'Settings' && <div className="mobile-settings">{settings}</div>}
+    </main>
+    <button className="mobile-fab" onClick={() => setFabOpen(v => !v)}>+</button>
+    {fabOpen && <div className="fab-sheet" onClick={() => setFabOpen(false)}><div onClick={e => e.stopPropagation()}>
+      <b>Quick action</b>
+      <button onClick={() => openAction('Clients')}>New client</button>
+      <button onClick={() => openAction('Invoices')}>New invoice</button>
+      <button onClick={() => openAction('Transactions')}>New transaction</button>
+      <button onClick={() => setFabOpen(false)}>Close</button>
+    </div></div>}
+    <nav className="mobile-bottom">
+      {[['Dashboard','Home','⌂'],['Clients','Clients','♙'],['Invoices','Invoice','▤'],['Transactions','Finance','↔'],['Settings','More','⚙']].map(([tab,label,icon]) => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}><span>{icon}</span><small>{label}</small></button>)}
     </nav>
   </div>;
 }
 
-function MobileHome({ totals, clients, invoices, transactions, setActive }) {
-  const activeClients = clients.filter(c => !c.archived);
-  const expiring = activeClients
-    .map(c => ({ ...c, days: daysUntil(c.planEndDate) }))
-    .filter(c => c.days !== null && c.days >= 0 && c.days <= 60)
-    .sort((a, b) => a.days - b.days)
-    .slice(0, 3);
-  const budgetUsedPct = totals.totalBudget ? Math.min(100, Math.round((totals.invoicedTotal / totals.totalBudget) * 100)) : 0;
-  const outstandingInvoices = invoices.filter(i => i.status !== 'Paid').slice(0, 4);
-  const recentActivity = [...invoices.slice(0, 2), ...transactions.slice(0, 2)];
-  return <>
-    <section className="mobile-hero-card">
-      <span>Revenue this month</span>
-      <strong>{money(totals.income)}</strong>
-      <small>{money(totals.outstanding)} outstanding · {money(totals.net)} net</small>
-      <div className="mobile-hero-actions"><button className="primary" onClick={() => setActive('Invoices')}>+ Invoice</button><button onClick={() => setActive('Transactions')}>+ Transaction</button></div>
-    </section>
-    <section className="mobile-kpi-grid">
-      <div><small>Clients</small><b>{totals.activeClients}</b></div>
-      <div><small>Outstanding</small><b>{money(totals.outstanding)}</b></div>
-      <div><small>Budget left</small><b>{money(totals.remainingBudget)}</b></div>
-      <div><small>Plans due</small><b>{totals.expiringPlans}</b></div>
-    </section>
-    <section className="mobile-card">
-      <div className="mobile-section-head"><h3>Budget utilisation</h3><span>{budgetUsedPct}%</span></div>
-      <div className="mobile-progress"><span style={{ width: `${budgetUsedPct}%` }} /></div>
-      <p>{money(totals.invoicedTotal)} invoiced from {money(totals.totalBudget)} total NDIS budget.</p>
-    </section>
-    <section className="mobile-card attention-card">
-      <div className="mobile-section-head"><h3>Needs attention</h3><button onClick={() => setActive('Clients')}>View</button></div>
-      {expiring.length ? expiring.map(c => <div className="mobile-alert" key={c.id}><b>{c.name}</b><span>Plan expires in {c.days} days</span></div>) : <p>No NDIS plans expiring soon.</p>}
-    </section>
-    <section className="mobile-card">
-      <div className="mobile-section-head"><h3>Outstanding invoices</h3><button onClick={() => setActive('Invoices')}>All</button></div>
-      {outstandingInvoices.length ? outstandingInvoices.map(i => <div className="mobile-list-row" key={i.id}><div><b>{i.invoiceNumber}</b><small>{i.clientName} · Due {fmt(i.dueDate)}</small></div><strong>{money(i.total)}</strong></div>) : <p>No outstanding invoices.</p>}
-    </section>
-    <section className="mobile-card">
-      <div className="mobile-section-head"><h3>Recent activity</h3></div>
-      {recentActivity.length ? recentActivity.map(x => <div className="mobile-list-row" key={x.id}><div><b>{x.invoiceNumber ? `Invoice ${x.invoiceNumber}` : x.description}</b><small>{x.clientName || 'No client'}</small></div><strong>{money(x.total || x.amount || 0)}</strong></div>) : <p>No activity yet.</p>}
-    </section>
-  </>;
+function getMobileAlerts({ clients, invoices, totals }) {
+  const alerts = [];
+  clients.filter(c => !c.archived).forEach(c => {
+    const d = daysUntil(c.planEndDate);
+    if (d !== null && d >= 0 && d <= 30) alerts.push({ type: 'Plan', title: `${c.name} plan ends in ${d} day${d === 1 ? '' : 's'}`, meta: fmt(c.planEndDate) });
+  });
+  invoices.filter(i => i.status !== 'Paid').forEach(i => {
+    const d = daysUntil(i.dueDate);
+    if (d !== null && d < 0) alerts.push({ type: 'Overdue', title: `${i.invoiceNumber} is overdue`, meta: `${i.clientName} · ${money(i.total)}` });
+  });
+  if (totals.totalBudget > 0) {
+    const used = Math.min(999, Math.round((totals.invoicedTotal / totals.totalBudget) * 100));
+    if (used >= 80) alerts.push({ type: 'Budget', title: `Budget usage is ${used}%`, meta: `${money(totals.remainingBudget)} remaining` });
+  }
+  return alerts.slice(0, 5);
+}
+
+function MobileHome({ firstName, totals, alerts, invoices, clients, setActive }) {
+  return <section className="mobile-home">
+    <div className="mobile-hero"><small>Premium NDIS Operations</small><h2>Good day, {firstName} 👋</h2><p>Focus on today’s money, plans, and client actions.</p></div>
+    <div className="mobile-kpis">
+      <MiniKpi label="Revenue" value={money(totals.income)} />
+      <MiniKpi label="Outstanding" value={money(totals.outstanding)} />
+      <MiniKpi label="Clients" value={totals.activeClients} />
+      <MiniKpi label="Budget Left" value={money(totals.remainingBudget)} />
+    </div>
+    <div className="mobile-quick"><button onClick={() => setActive('Invoices')}>+ Invoice</button><button onClick={() => setActive('Transactions')}>+ Transaction</button></div>
+    <MobilePanel title="Today" action={alerts.length ? `${alerts.length} alerts` : 'All clear'}>{alerts.length ? alerts.map((a,i) => <div className="mobile-alert" key={i}><span>{a.type}</span><div><b>{a.title}</b><small>{a.meta}</small></div></div>) : <p className="mobile-empty">No urgent NDIS alerts today.</p>}</MobilePanel>
+    <MobilePanel title="Recent invoices" action="View all"><Records rows={invoices} empty="No invoices yet." render={i => <div className="mobile-list-row" key={i.id}><div><b>{i.invoiceNumber}</b><small>{i.clientName} · {fmt(i.dueDate)}</small></div><strong>{money(i.total)}</strong></div>} /></MobilePanel>
+    <MobilePanel title="Active clients" action="View all"><Records rows={clients.slice(0,3)} empty="No clients yet." render={c => <div className="mobile-list-row" key={c.id}><div><b>{c.name}</b><small>Plan ends {fmt(c.planEndDate)}</small></div><strong>{money(c.budget)}</strong></div>} /></MobilePanel>
+  </section>;
+}
+
+function MiniKpi({ label, value }) { return <div className="mini-kpi"><small>{label}</small><b>{value}</b></div>; }
+function MobilePanel({ title, action, children }) { return <section className="mobile-panel"><div className="mobile-panel-head"><h3>{title}</h3><small>{action}</small></div>{children}</section>; }
+
+function MobileClients({ clients, form, setForm, editing, save, edit, archive, del, cancel }) {
+  const [showForm, setShowForm] = useState(false);
+  const active = clients.filter(c => !c.archived);
+  return <section className="mobile-page">
+    <div className="mobile-title"><h2>Clients</h2><button onClick={() => setShowForm(v => !v)}>{showForm || editing ? 'Hide form' : '+ Client'}</button></div>
+    {(showForm || editing) && <MobilePanel title={editing ? 'Edit client' : 'New client'}><Field label="Client Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><div className="mobile-two"><Field type="date" label="Plan Start" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="Plan End" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/></div><Field type="number" label="Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/><button className="primary" onClick={() => { save(); setShowForm(false); }}>{editing ? 'Update client' : 'Save client'}</button>{editing && <button onClick={cancel}>Cancel</button>}</MobilePanel>}
+    <Records rows={active} empty="No active clients added yet." render={c => <div className="mobile-client-card" key={c.id}><div><span className="mobile-avatar">{(c.name||'C').split(' ').map(x=>x[0]).join('').slice(0,2)}</span><div><h3>{c.name}</h3><small>NDIS {c.ndisNumber || '-'}</small></div></div><div className="budget-line"><span style={{width: `${Math.min(100, Number(c.budget) ? 35 : 0)}%`}} /></div><p>Plan: {fmt(c.planStartDate)} → {fmt(c.planEndDate)}</p><p>Budget: {money(c.budget)} · {(() => { const d = daysUntil(c.planEndDate); return d === null ? 'No end date' : d < 0 ? 'Ended' : `${d} days left`; })()}</p><div className="mobile-card-actions"><button onClick={() => { edit(c); setShowForm(true); }}>Edit</button><button onClick={() => archive(c.id)}>Archive</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>} />
+  </section>;
+}
+
+function MobileInvoices({ clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, cancel, query, setQuery }) {
+  const [step, setStep] = useState(1);
+  const line = form.lines[0] || emptyLine();
+  const preview = form.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.rate || 0), 0);
+  const filtered = invoices.filter(i => `${i.invoiceNumber} ${i.clientName}`.toLowerCase().includes(query.toLowerCase()));
+  return <section className="mobile-page">
+    <div className="mobile-title"><h2>Invoice</h2><span>Step {step}/4</span></div>
+    <MobilePanel title={editing ? 'Edit invoice' : 'New invoice'} action="Client → Service → Review">
+      <div className="step-dots">{[1,2,3,4].map(n => <button key={n} className={step === n ? 'active' : ''} onClick={() => setStep(n)}>{n}</button>)}</div>
+      {step === 1 && <><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">Select active client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field type="date" label="Due Date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}/></>}
+      {step === 2 && <><label><span>Support Item</span><select value={line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{ITEMS.map(i => <option key={i.label}>{i.label}</option>)}</select></label><Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/><div className="mobile-two"><Field type="number" step="0.01" label="Qty" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/><Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/></div><button onClick={addLine}>+ Add another line</button>{form.lines.length > 1 && <small>{form.lines.length} service lines attached</small>}</>}
+      {step === 3 && <><Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/>{form.lines.map((l, idx) => <div className="mobile-list-row" key={l.id}><div><b>{idx + 1}. {l.itemLabel}</b><small>{l.quantity} {l.unitType} @ {money(l.rate)}</small></div><strong>{money(Number(l.quantity || 0) * Number(l.rate || 0))}</strong></div>)}</>}
+      {step === 4 && <div className="review-box"><small>Invoice total</small><b>{money(preview)}</b><p>Check the client, service dates, rates, and notes before generating.</p></div>}
+      <div className="mobile-wizard-actions"><button disabled={step === 1} onClick={() => setStep(s => Math.max(1, s - 1))}>Back</button>{step < 4 ? <button className="primary" onClick={() => setStep(s => Math.min(4, s + 1))}>Next</button> : <button className="primary" onClick={() => { save(); setStep(1); }}>{editing ? 'Update invoice' : 'Generate invoice'}</button>}</div>{editing && <button onClick={cancel}>Cancel edit</button>}
+    </MobilePanel>
+    <MobilePanel title="Invoice register"><label className="mobile-search"><input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)}/></label><Records rows={filtered} empty="No invoices created yet." render={i => <div className="mobile-invoice-card" key={i.id}><div><b>{i.invoiceNumber}</b><span>{money(i.total)}</span></div><small>{i.clientName} · Due {fmt(i.dueDate)}</small><div className="mobile-card-actions"><button onClick={() => edit(i)}>Edit</button><button onClick={() => exportPDF(i)}>PDF</button><button className="danger" onClick={() => del(i.id)}>Delete</button></div></div>} /></MobilePanel>
+  </section>;
+}
+
+function MobileFinance({ clients, transactions, form, setForm, editing, save, edit, del, cancel }) {
+  const income = transactions.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount||0),0);
+  const expenses = transactions.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount||0),0);
+  return <section className="mobile-page"><div className="mobile-title"><h2>Finance</h2><span>{money(income-expenses)} net</span></div><div className="mobile-kpis two"><MiniKpi label="Income" value={money(income)} /><MiniKpi label="Expenses" value={money(expenses)} /></div><MobilePanel title={editing ? 'Edit transaction' : 'New transaction'}><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><div className="mobile-two"><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label></div><Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><div className="mobile-two"><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update transaction' : 'Save transaction'}</button>{editing && <button onClick={cancel}>Cancel</button>}</MobilePanel><MobilePanel title="Recent transactions"><Records rows={transactions.slice(0,8)} empty="No transactions yet." render={t => <div className="mobile-list-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No client'} · {fmt(t.date)}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong></div>} /></MobilePanel></section>;
 }
 
 function Icon({ name }) { return <span className="nav-icon">{({Dashboard:'⌂', Clients:'♙', Invoices:'▤', Transactions:'↔', Settings:'⚙'})[name]}</span>; }
