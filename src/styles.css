@@ -66,3 +66,11 @@
   .auth-shell { grid-template-columns: 1fr; padding: 24px; }
   .auth-hero { padding: 16px; }
 }
+
+.logo-uploader{display:flex;gap:16px;align-items:center;padding:16px;border:1px solid rgba(215,180,106,.22);border-radius:22px;background:linear-gradient(135deg,rgba(255,255,255,.06),rgba(255,255,255,.02));margin:12px 0 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.logo-uploader.compact{padding:12px;margin-bottom:14px}
+.logo-uploader>div:last-child{display:flex;flex-direction:column;gap:7px;align-items:flex-start}
+.logo-uploader small{color:var(--muted);line-height:1.4}
+.logo-preview{width:82px;height:82px;border-radius:24px;display:grid;place-items:center;flex:0 0 auto;background:radial-gradient(circle at top left,rgba(215,180,106,.38),rgba(79,124,255,.13)),#111827;border:1px solid rgba(215,180,106,.35);overflow:hidden;color:#f8e7bd;font-size:24px;font-weight:900;letter-spacing:.08em}
+.logo-uploader.compact .logo-preview{width:64px;height:64px;border-radius:18px;font-size:19px}
+.logo-preview img{width:100%;height:100%;object-fit:contain;background:#fff;padding:8px}
