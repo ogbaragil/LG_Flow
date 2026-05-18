@@ -1,56 +1,59 @@
 # LG-Flow PWA
 
-A GitHub-ready Progressive Web App version of the uploaded LG-Flow app. It includes offline support, installable PWA manifest, PDF invoice export, local backup/restore, optional Supabase cloud sync, and Cloudflare Pages deployment files.
+This is a GitHub-ready PWA conversion of the uploaded LG-Flow React Native/Expo app. It preserves the intended app flow: dashboard, clients, archived clients, invoices with service lines, invoice PDF export, transactions with filters, backup/restore, offline local storage, Supabase sync hooks, and Cloudflare Pages deployment.
 
 ## Run locally
 
 ```bash
 npm install
-cp .env.example .env
 npm run dev
 ```
 
-Open the local URL shown by Vite.
+## Build
 
-## Supabase setup
+```bash
+npm run build
+npm run preview
+```
+
+## Supabase
 
 1. Create a Supabase project.
-2. Open the SQL editor and run `supabase/schema.sql`.
-3. Copy your project URL and anon key into `.env`:
+2. Run `supabase/schema.sql` in the Supabase SQL editor.
+3. Copy `.env.example` to `.env`.
+4. Add your project URL and anon key.
 
 ```bash
-VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
-VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
-The app still works offline without Supabase. Supabase is used for manual snapshot sync from Settings.
+The app works offline first with browser local storage. Supabase sync is available from Settings once environment variables are configured.
 
-## GitHub import
+## Cloudflare Pages
 
-1. Create a new GitHub repo.
-2. Upload or push all files in this folder.
-3. Add GitHub repository secrets for Cloudflare deployment:
-   - `CLOUDFLARE_API_TOKEN`
-   - `CLOUDFLARE_ACCOUNT_ID`
-4. Push to `main` to deploy with the included workflow.
-
-## Cloudflare Pages manual deploy
+Build command:
 
 ```bash
-npm install
 npm run build
-npx wrangler pages deploy dist --project-name lg-flow-pwa
 ```
 
-Set these Cloudflare Pages environment variables if using Supabase:
+Output directory:
 
 ```bash
-VITE_SUPABASE_URL
-VITE_SUPABASE_ANON_KEY
+dist
 ```
+
+## GitHub Actions
+
+`.github/workflows/cloudflare-pages.yml` is included. Add these GitHub repository secrets:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
 ## Notes
 
-- Data is saved locally first for offline use.
-- Backup JSON export/import is included.
-- The included Supabase policy is intentionally simple for quick start. For production, use Supabase Auth and per-user row policies.
+- `docs/original-react-native-reference.js` is included as a reference copy of the uploaded app source.
+- The PWA uses web equivalents for Expo features: localStorage for AsyncStorage, file download/upload for backup, and jsPDF for invoice PDF export.
