@@ -385,7 +385,7 @@ export default function App() {
       <div className="profile-card"><div className="avatar">{(user.email || 'LG').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><h2>Welcome back, {displayName} 👋</h2><p>Here’s what’s happening with your business today.</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)}/><kbd>⌘K</kbd></label><button className="icon-btn">◐</button><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button><div className="user-badge">{userInitial}</div></div></header>
+      <header className="topbar"><div><h2>Welcome back, {displayName}</h2><p>Here’s what’s happening with your business today.</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)}/><kbd>⌘K</kbd></label><button className="icon-btn">◐</button><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button><div className="user-badge">{userInitial}</div></div></header>
       {notice && <div className="notice">{notice}</div>}
       {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} setActive={setActive}/>} 
       {active === 'Clients' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
@@ -441,8 +441,7 @@ export default function App() {
 
 function MobileShell({ active, setActive, displayName, business, totals, clients, invoices, transactions, notice, query, setQuery, user, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
-  const firstName = String(displayName || 'there').split(' ')[0];
-  const activeClients = clients.filter(c => !c.archived);
+    const activeClients = clients.filter(c => !c.archived);
   const alerts = getMobileAlerts({ clients, invoices, totals });
   const recentInvoices = invoices.slice(0, 4);
   const openAction = (tab) => { setFabOpen(false); setActive(tab); setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 20); };
@@ -453,7 +452,7 @@ function MobileShell({ active, setActive, displayName, business, totals, clients
     </header>
     <main className="mobile-main">
       {notice && <div className="notice mobile-notice">{notice}</div>}
-      {active === 'Dashboard' && <MobileHome firstName={firstName} totals={totals} alerts={alerts} invoices={recentInvoices} clients={activeClients} setActive={setActive} />}
+      {active === 'Dashboard' && <MobileHome displayName={displayName} totals={totals} alerts={alerts} invoices={recentInvoices} clients={activeClients} setActive={setActive} />}
       {active === 'Clients' && <MobileClients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={cancelClient} />}
       {active === 'Invoices' && <MobileInvoices clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} cancel={cancelInvoice} query={query} setQuery={setQuery} />}
       {active === 'Transactions' && <MobileFinance clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
@@ -490,9 +489,9 @@ function getMobileAlerts({ clients, invoices, totals }) {
   return alerts.slice(0, 5);
 }
 
-function MobileHome({ firstName, totals, alerts, invoices, clients, setActive }) {
+function MobileHome({ displayName, totals, alerts, invoices, clients, setActive }) {
   return <section className="mobile-home">
-    <div className="mobile-hero"><small>Premium NDIS Operations</small><h2>Good day, {firstName} 👋</h2><p>Focus on today’s money, plans, and client actions.</p></div>
+    <div className="mobile-hero"><small>Premium NDIS Operations</small><h2>Welcome back, {displayName}</h2><p>Here’s what’s happening with your business today.</p></div>
     <div className="mobile-kpis">
       <MiniKpi label="Revenue" value={money(totals.income)} />
       <MiniKpi label="Outstanding" value={money(totals.outstanding)} />
@@ -538,10 +537,57 @@ function MobileInvoices({ clients, invoices, form, setForm, editing, setLine, se
   </section>;
 }
 
+
+function dateValue(value) {
+  const time = new Date(value || 0).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function filterAndSortTransactions(transactions, filters) {
+  return [...transactions]
+    .filter(t => (filters.type === 'all' || t.type === filters.type))
+    .filter(t => (filters.status === 'all' || (t.status || 'paid') === filters.status))
+    .filter(t => (filters.clientId === 'all' || (filters.clientId === 'none' ? !t.clientId : t.clientId === filters.clientId)))
+    .filter(t => {
+      const q = String(filters.query || '').trim().toLowerCase();
+      if (!q) return true;
+      return `${t.description || ''} ${t.clientName || ''} ${t.category || ''}`.toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      if (filters.sort === 'date_asc') return dateValue(a.date) - dateValue(b.date);
+      if (filters.sort === 'amount_desc') return Number(b.amount || 0) - Number(a.amount || 0);
+      if (filters.sort === 'amount_asc') return Number(a.amount || 0) - Number(b.amount || 0);
+      return dateValue(b.date) - dateValue(a.date);
+    });
+}
+
 function MobileFinance({ clients, transactions, form, setForm, editing, save, edit, del, cancel }) {
-  const income = transactions.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount||0),0);
-  const expenses = transactions.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount||0),0);
-  return <section className="mobile-page"><div className="mobile-title"><h2>Finance</h2><span>{money(income-expenses)} net</span></div><div className="mobile-kpis two"><MiniKpi label="Income" value={money(income)} /><MiniKpi label="Expenses" value={money(expenses)} /></div><MobilePanel title={editing ? 'Edit transaction' : 'New transaction'}><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><div className="mobile-two"><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label></div><Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><div className="mobile-two"><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update transaction' : 'Save transaction'}</button>{editing && <button onClick={cancel}>Cancel</button>}</MobilePanel><MobilePanel title="Recent transactions"><Records rows={transactions.slice(0,8)} empty="No transactions yet." render={t => <div className="mobile-list-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No client'} · {fmt(t.date)}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong></div>} /></MobilePanel></section>;
+  const [filters, setFilters] = useState({ type: 'all', status: 'all', clientId: 'all', sort: 'date_desc', query: '' });
+  const rows = filterAndSortTransactions(transactions, filters);
+  const income = rows.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount||0),0);
+  const expenses = rows.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount||0),0);
+  const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
+  return <section className="mobile-page">
+    <div className="mobile-title"><h2>Finance</h2><span>{money(income-expenses)} net</span></div>
+    <div className="mobile-kpis two"><MiniKpi label="Income" value={money(income)} /><MiniKpi label="Expenses" value={money(expenses)} /></div>
+    <MobilePanel title="Transaction filters" action={`${rows.length} shown`}>
+      <Field label="Search" value={filters.query} placeholder="Description, client, category" onChange={e => setFilter('query', e.target.value)} />
+      <div className="mobile-two">
+        <label><span>Type</span><select value={filters.type} onChange={e => setFilter('type', e.target.value)}><option value="all">All</option><option value="income">Income</option><option value="expense">Expense</option></select></label>
+        <label><span>Status</span><select value={filters.status} onChange={e => setFilter('status', e.target.value)}><option value="all">All</option><option value="pending">Pending</option><option value="paid">Paid</option></select></label>
+      </div>
+      <div className="mobile-two">
+        <label><span>Client</span><select value={filters.clientId} onChange={e => setFilter('clientId', e.target.value)}><option value="all">All clients</option><option value="none">No client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <label><span>Sort</span><select value={filters.sort} onChange={e => setFilter('sort', e.target.value)}><option value="date_desc">Newest date</option><option value="date_asc">Oldest date</option><option value="amount_desc">Highest amount</option><option value="amount_asc">Lowest amount</option></select></label>
+      </div>
+    </MobilePanel>
+    <MobilePanel title={editing ? 'Edit transaction' : 'New transaction'}>
+      <label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+      <div className="mobile-two"><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label></div>
+      <Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><div className="mobile-two"><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update transaction' : 'Save transaction'}</button>{editing && <button onClick={cancel}>Cancel</button>}
+    </MobilePanel>
+    <MobilePanel title="Transactions"><Records rows={rows.slice(0,12)} empty="No matching transactions found." render={t => <div className="mobile-list-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No client'} · {t.category || 'General'} · {fmt(t.date)} · {(t.status || 'paid')}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>} /></MobilePanel>
+  </section>;
 }
 
 function Icon({ name }) { return <span className="nav-icon">{({Dashboard:'⌂', Clients:'♙', Invoices:'▤', Transactions:'↔', Settings:'⚙'})[name]}</span>; }
@@ -575,10 +621,28 @@ function Invoices({ clients, invoices, form, setForm, editing, setLine, selectIt
 }
 
 function Transactions({ clients, transactions, form, setForm, editing, save, edit, del, cancel }) {
-  const [type, setType] = useState('all'), [status, setStatus] = useState('all');
-  const rows = transactions.filter(t => (type === 'all' || t.type === type) && (status === 'all' || t.status === status));
-  const income = rows.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount),0), expenses = rows.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount),0);
-  return <><Card title={editing ? 'Edit Business Transaction' : 'Record Business Transaction'}><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Transaction' : 'Save Transaction'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Transaction Register"><div className="filters"><select value={type} onChange={e => setType(e.target.value)}><option>all</option><option>income</option><option>expense</option></select><select value={status} onChange={e => setStatus(e.target.value)}><option>all</option><option>pending</option><option>paid</option></select></div><div className="mini-stats"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income-expenses)}</b></div><Records rows={rows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No Client'} · {t.category || 'General'} · {fmt(t.date)}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><span className="pill">{t.status}</span><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/></Card></>;
+  const [filters, setFilters] = useState({ type: 'all', status: 'all', clientId: 'all', sort: 'date_desc', query: '' });
+  const rows = filterAndSortTransactions(transactions, filters);
+  const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
+  const income = rows.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount || 0),0);
+  const expenses = rows.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount || 0),0);
+  return <>
+    <Card title={editing ? 'Edit Business Transaction' : 'Record Business Transaction'}>
+      <div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div>
+      <button className="primary" onClick={save}>{editing ? 'Update Transaction' : 'Save Transaction'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}
+    </Card>
+    <Card title="Transaction Register" action={`${rows.length} shown`}>
+      <div className="filters transaction-filters">
+        <input value={filters.query} placeholder="Search description, client, category" onChange={e => setFilter('query', e.target.value)} />
+        <select value={filters.type} onChange={e => setFilter('type', e.target.value)}><option value="all">All types</option><option value="income">Income</option><option value="expense">Expense</option></select>
+        <select value={filters.status} onChange={e => setFilter('status', e.target.value)}><option value="all">All statuses</option><option value="pending">Pending</option><option value="paid">Paid</option></select>
+        <select value={filters.clientId} onChange={e => setFilter('clientId', e.target.value)}><option value="all">All clients</option><option value="none">No client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        <select value={filters.sort} onChange={e => setFilter('sort', e.target.value)}><option value="date_desc">Newest date first</option><option value="date_asc">Oldest date first</option><option value="amount_desc">Highest amount first</option><option value="amount_asc">Lowest amount first</option></select>
+      </div>
+      <div className="mini-stats"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income-expenses)}</b></div>
+      <Records rows={rows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No Client'} · {t.category || 'General'} · {fmt(t.date)}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><span className="pill">{t.status}</span><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/>
+    </Card>
+  </>;
 }
 
 function Settings({ business, setBusiness, saveBusiness, clients, invoices, transactions, backup, restore, clear, sync, load, user }) {
