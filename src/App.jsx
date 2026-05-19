@@ -733,7 +733,7 @@ function Icon({ name }) { return <span className="nav-icon">{({Dashboard:'⌂', 
 function Card({ title, action, children, className = '' }) { return <section className={`card ${className}`}><div className="card-head"><h3>{title}</h3>{action}</div>{children}</section>; }
 function Field({ label, multiline, ...props }) { return <label><span>{label}</span>{multiline ? <textarea {...props}/> : <input {...props}/>}</label>; }
 function Records({ rows, empty, render }) { return rows.length ? rows.map(render) : <p className="empty">{empty}</p>; }
-function Stat({ label, value, tone, icon, trend }) { return <div className={`stat ${tone || ''}`}><div className="stat-icon">{icon}</div><small>{label}</small><strong>{value}</strong><em>{trend}</em><Spark /></div>; }
+function Stat({ label, value, tone, icon, trend }) { return <div className={`stat ${tone || ''}`}><div className="stat-icon">{icon}</div><small>{label}</small><strong>{value}</strong><em>{trend}</em></div>; }
 function Spark() { return <svg viewBox="0 0 180 48" className="spark"><path d="M4 38 C22 40 24 31 38 30 C52 28 48 16 66 20 C82 25 82 34 100 29 C116 25 111 18 130 17 C150 16 151 29 176 10" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg>; }
 
 
@@ -840,7 +840,7 @@ function Transactions({ clients, transactions, form, setForm, editing, save, edi
         <select value={filters.sort} onChange={e => setFilter('sort', e.target.value)}><option value="date_desc">Newest date first</option><option value="date_asc">Oldest date first</option><option value="amount_desc">Highest amount first</option><option value="amount_asc">Lowest amount first</option></select>
       </div>
       <div className="mini-stats"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income-expenses)}</b></div>
-      <Records rows={rows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No Client'} · {t.category || 'General'} · {fmt(t.date)}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><span className="pill">{t.status}</span><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/>
+      <div className="txn-table"><div className="txn-table-head"><span>Transaction</span><span>Client / Category</span><span>Date</span><span>Status</span><span>Amount</span><span>Actions</span></div><Records rows={rows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.invoiceNumber ? `Invoice ${t.invoiceNumber}` : t.type}</small></div><div><b>{t.clientName || 'No Client'}</b><small>{t.category || 'General'}</small></div><time>{fmt(t.date)}</time><span className="pill">{t.status}</span><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/></div>
     </Card>
   </>;
 }
