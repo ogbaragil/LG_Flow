@@ -16,6 +16,7 @@ const DEFAULT_PRICING_ITEMS = [
   { id: 'community-saturday', group: 'Community Access', itemNumber: '04_105_0125_6_1', label: 'Access Community Social and Rec Activ - Standard - Saturday', unitType: 'Hour', rate: 98.83, archived: false },
   { id: 'community-sunday', group: 'Community Access', itemNumber: '04_106_0125_6_1', label: 'Access Community Social and Rec Activ - Standard - Sunday', unitType: 'Hour', rate: 127.43, archived: false },
   { id: 'community-public-holiday', group: 'Community Access', itemNumber: '04_102_0125_6_1', label: 'Access Community Social and Rec Activ - Standard - Public Holiday', unitType: 'Hour', rate: 156.03, archived: false },
+  { id: 'transport-activity-based', group: 'Transport', itemNumber: '04_590_0125_6_1', label: 'Activity Based Transport', unitType: 'Each', rate: 1.00, archived: false },
   { id: 'establishment-community', group: 'Establishment Fees', itemNumber: '04_049_0125_1_1', label: 'Establishment Fee for Personal Care/Participation', unitType: 'Each', rate: 702.30, archived: false },
   { id: 'establishment-selfcare', group: 'Establishment Fees', itemNumber: '01_049_0107_1_1', label: 'Establishment Fee for Personal Care/Participation', unitType: 'Each', rate: 702.30, archived: false },
 ];
@@ -846,6 +847,7 @@ function Transactions({ clients, transactions, form, setForm, editing, save, edi
 
 function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, invoices, transactions, backup, restore, clear, sync, load, user }) {
   const [draft, setDraft] = useState({ ...EMPTY_BUSINESS, ...business });
+  const [businessOpen, setBusinessOpen] = useState(false);
 
   useEffect(() => {
     setDraft({ ...EMPTY_BUSINESS, ...business });
@@ -854,26 +856,35 @@ function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, 
   const updateDraft = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
 
   return <>
-    <Card title="Business Profile">
-      <p>This information is private to the signed-in workspace and appears on exported invoices.</p>
-      <div className="logo-uploader">
-        <div className="logo-preview">{draft.logoUrl ? <img src={draft.logoUrl} alt="Business logo" /> : <span>{(draft.name || 'LG').slice(0,2).toUpperCase()}</span>}</div>
+    <Card title="Business Profile" action={<button type="button" className="text-link" onClick={() => setBusinessOpen(open => !open)}>{businessOpen ? 'Collapse' : 'Edit Profile'}</button>}>
+      <div className="settings-summary">
+        <div className="logo-preview compact">{draft.logoUrl ? <img src={draft.logoUrl} alt="Business logo" /> : <span>{(draft.name || 'LG').slice(0,2).toUpperCase()}</span>}</div>
         <div>
-          <b>Business Logo</b>
-          <small>Upload a PNG or JPG. It will appear on exported invoices and is saved in your private profile.</small>
-          <label className="file">Upload Logo<input type="file" accept="image/png,image/jpeg,image/jpg" onChange={async e => { const file = e.target.files?.[0]; if (file) updateDraft('logoUrl', await fileToDataUrl(file)); }}/></label>
-          {draft.logoUrl && <button type="button" onClick={() => updateDraft('logoUrl', '')}>Remove Logo</button>}
+          <b>{draft.name || 'Business profile not completed'}</b>
+          <small>{[draft.abn, draft.email, draft.phone].filter(Boolean).join(' · ') || 'Details shown on invoices. Open only when you need to update them.'}</small>
         </div>
       </div>
-      <div className="grid">
-        <Field label="Business Name" value={draft.name} onChange={e => updateDraft('name', e.target.value)} />
-        <Field label="ABN / Registration" value={draft.abn} onChange={e => updateDraft('abn', e.target.value)} />
-        <Field label="Business Email" type="email" value={draft.email} onChange={e => updateDraft('email', e.target.value)} />
-        <Field label="Business Phone" value={draft.phone} onChange={e => updateDraft('phone', e.target.value)} />
-        <Field label="Business Address" multiline value={draft.address} onChange={e => updateDraft('address', e.target.value)} />
-        <Field label="Payment Details" multiline value={draft.paymentDetails} onChange={e => updateDraft('paymentDetails', e.target.value)} placeholder={"Bank: Your Bank\nBSB: 000 000\nAccount: 0000 0000"} />
-      </div>
-      <button className="primary" onClick={() => saveBusiness(draft)}>Save Business Profile</button>
+      {businessOpen && <>
+        <p>This information is private to the signed-in workspace and appears on exported invoices.</p>
+        <div className="logo-uploader">
+          <div className="logo-preview">{draft.logoUrl ? <img src={draft.logoUrl} alt="Business logo" /> : <span>{(draft.name || 'LG').slice(0,2).toUpperCase()}</span>}</div>
+          <div>
+            <b>Business Logo</b>
+            <small>Upload a PNG or JPG. It will appear on exported invoices and is saved in your private profile.</small>
+            <label className="file">Upload Logo<input type="file" accept="image/png,image/jpeg,image/jpg" onChange={async e => { const file = e.target.files?.[0]; if (file) updateDraft('logoUrl', await fileToDataUrl(file)); }}/></label>
+            {draft.logoUrl && <button type="button" onClick={() => updateDraft('logoUrl', '')}>Remove Logo</button>}
+          </div>
+        </div>
+        <div className="grid">
+          <Field label="Business Name" value={draft.name} onChange={e => updateDraft('name', e.target.value)} />
+          <Field label="ABN / Registration" value={draft.abn} onChange={e => updateDraft('abn', e.target.value)} />
+          <Field label="Business Email" type="email" value={draft.email} onChange={e => updateDraft('email', e.target.value)} />
+          <Field label="Business Phone" value={draft.phone} onChange={e => updateDraft('phone', e.target.value)} />
+          <Field label="Business Address" multiline value={draft.address} onChange={e => updateDraft('address', e.target.value)} />
+          <Field label="Payment Details" multiline value={draft.paymentDetails} onChange={e => updateDraft('paymentDetails', e.target.value)} placeholder={"Bank: Your Bank\nBSB: 000 000\nAccount: 0000 0000"} />
+        </div>
+        <button className="primary" onClick={() => { saveBusiness(draft); setBusinessOpen(false); }}>Save Business Profile</button>
+      </>}
     </Card>
     <NdisPricingManager
       items={draft.pricingItems || DEFAULT_PRICING_ITEMS}
@@ -889,10 +900,12 @@ function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, 
 
 function NdisPricingManager({ items, onChange, onSave }) {
   const [query, setQuery] = useState('');
+  const [editingRates, setEditingRates] = useState(false);
   const pricingItems = getPricingItems({ pricingItems: items });
   const groups = [...new Set(pricingItems.map(item => item.group || 'Custom Items'))];
   const filtered = pricingItems.filter(item => `${item.group} ${item.itemNumber} ${item.label} ${item.unitType}`.toLowerCase().includes(query.toLowerCase()));
   const updateItem = (id, field, value) => {
+    if (field === 'rate' && !editingRates) return;
     onChange(pricingItems.map(item => item.id === id ? { ...item, [field]: field === 'rate' ? Number(value || 0) : value } : item));
   };
   const addItem = () => {
@@ -900,13 +913,25 @@ function NdisPricingManager({ items, onChange, onSave }) {
       ...pricingItems,
       { id: makeId('pricing'), group: 'Custom Items', itemNumber: '', label: 'New support item', unitType: 'Hour', rate: 0, archived: false },
     ]);
+    setEditingRates(true);
   };
   const restoreDefaults = () => {
     if (confirm('Restore default NDIS pricing items? This will replace your custom pricing table.')) onChange(DEFAULT_PRICING_ITEMS);
   };
+  const savePricing = () => {
+    onSave();
+    setEditingRates(false);
+  };
   return <Card title="NDIS Pricing Manager" action={`${pricingItems.filter(i => !i.archived).length} active items`}>
-    <p>Update support item numbers, descriptions, units and rates here. Invoice generation uses this table for future invoices, so annual NDIS price changes can be managed without editing code.</p>
-    <div className="settings-toolbar"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search item number, name, group or unit" /><button onClick={addItem}>+ Add Item</button><button onClick={restoreDefaults}>Restore Defaults</button><button className="primary" onClick={onSave}>Save Pricing</button></div>
+    <p>Manage support item numbers, descriptions, units and annual NDIS rates here. Rate fields are locked by default so prices are not changed by mistake. Invoice generation uses this table for future invoices.</p>
+    <div className="settings-toolbar">
+      <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search item number, name, group or unit" />
+      <button onClick={addItem}>+ Add Item</button>
+      <button onClick={restoreDefaults}>Restore Defaults</button>
+      <button type="button" className={editingRates ? 'danger' : ''} onClick={() => setEditingRates(value => !value)}>{editingRates ? 'Lock Rates' : 'Edit Rates'}</button>
+      <button className="primary" onClick={savePricing}>Save Pricing</button>
+    </div>
+    <div className="rate-lock-note">{editingRates ? 'Rate editing is unlocked. Review changes carefully before saving.' : 'Rates are locked. Click Edit Rates to update annual NDIS prices.'}</div>
     <div className="pricing-groups">
       {groups.map(group => {
         const groupRows = filtered.filter(item => item.group === group);
@@ -921,7 +946,7 @@ function NdisPricingManager({ items, onChange, onSave }) {
                 <td><input value={item.itemNumber} onChange={e => updateItem(item.id, 'itemNumber', e.target.value)} placeholder="01_011_0107_1_1" /></td>
                 <td><input value={item.label} onChange={e => updateItem(item.id, 'label', e.target.value)} /></td>
                 <td><input value={item.unitType} onChange={e => updateItem(item.id, 'unitType', e.target.value)} placeholder="Hour" /></td>
-                <td><input type="number" step="0.01" value={item.rate} onChange={e => updateItem(item.id, 'rate', e.target.value)} /></td>
+                <td><input className="rate-input" type="number" step="0.01" value={item.rate} readOnly={!editingRates} aria-readonly={!editingRates} title={editingRates ? 'Rate editing unlocked' : 'Rates are locked. Click Edit Rates to unlock.'} onChange={e => updateItem(item.id, 'rate', e.target.value)} /></td>
               </tr>)}</tbody>
             </table>
           </div>
