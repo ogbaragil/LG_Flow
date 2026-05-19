@@ -24,6 +24,18 @@ const addDaysISO = (days) => { const d = new Date(); d.setDate(d.getDate() + day
 const makeId = (p) => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const money = (v) => `$${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmt = (d) => d ? new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '-';
+const getFirstName = (user) => {
+  const source = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'there';
+  const first = String(source).trim().split(/[\s._-]+/).filter(Boolean)[0] || 'there';
+  return first === 'there' ? first : first.charAt(0).toUpperCase() + first.slice(1);
+};
+const getTimeGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+};
+const buildWelcomeMessage = (user) => `${getTimeGreeting()}, ${getFirstName(user)}`;
 const daysUntil = (dateStr) => { if (!dateStr) return null; const end = new Date(`${dateStr}T00:00:00`); if (Number.isNaN(end.getTime())) return null; return Math.ceil((end - new Date()) / 86400000); };
 const fileToDataUrl = (file) => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
 const safeText = (value) => String(value ?? '');
@@ -68,6 +80,7 @@ export default function App() {
   const [editingTxn, setEditingTxn] = useState(null);
   const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
+  const [theme, setTheme] = useState(() => localStorage.getItem('lg_flow_theme') || 'dark');
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [storageLoaded, setStorageLoaded] = useState(false);
@@ -81,6 +94,13 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { setUser(session?.user || null); });
     return () => { mounted = false; listener?.subscription?.unsubscribe(); };
   }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('lg_flow_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
   const applyPayload = (d) => {
     setBusiness({ ...EMPTY_BUSINESS, ...(d?.business || {}) });
@@ -357,10 +377,8 @@ export default function App() {
   if (authLoading) return <LoadingScreen />;
   if (!user) return <AuthGate />;
 
-  const displayName =
-    user?.user_metadata?.full_name ||
-    user?.email?.split('@')[0] ||
-    'there';
+  const displayName = getFirstName(user);
+  const welcomeMessage = buildWelcomeMessage(user);
   const userInitial = (displayName || user?.email || 'U').slice(0, 1).toUpperCase();
 
   const backup = () => { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), data: payload }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'lg-flow-backup.json'; a.click(); };
@@ -385,11 +403,11 @@ export default function App() {
       <div className="profile-card"><div className="avatar">{(user.email || 'LG').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><h2>Welcome back, {displayName}</h2><p>Here’s what’s happening with your business today.</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)}/><kbd>⌘K</kbd></label><button className="icon-btn">◐</button><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button><div className="user-badge">{userInitial}</div></div></header>
+      <header className="topbar"><div><h2>{welcomeMessage}</h2><p>Here’s what’s happening with your business today.</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onFocus={() => setActive('Invoices')} onKeyDown={e => { if (e.key === 'Enter') setActive('Invoices'); }} onChange={e => { setQuery(e.target.value); if (active !== 'Invoices') setActive('Invoices'); }}/><kbd>⌘K</kbd></label><button className="icon-btn" aria-label="Toggle theme" onClick={toggleTheme}>{theme === 'dark' ? '☀' : '◐'}</button><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button><div className="user-badge">{userInitial}</div></div></header>
       {notice && <div className="notice">{notice}</div>}
       {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} setActive={setActive}/>} 
       {active === 'Clients' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
-      {active === 'Invoices' && <Invoices clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => setInvoices(p => p.filter(i => i.id !== id))} exportPDF={exportPDF} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
+      {active === 'Invoices' && <Invoices clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => setInvoices(p => p.filter(i => i.id !== id))} exportPDF={exportPDF} query={query} setQuery={setQuery} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Transactions' && <Transactions clients={clients.filter(c => !c.archived)} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
       {active === 'Settings' && <Settings business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>} 
     </main>
@@ -398,6 +416,7 @@ export default function App() {
     active={active}
     setActive={setActive}
     displayName={displayName}
+    welcomeMessage={welcomeMessage}
     business={business}
     totals={totals}
     clients={clients}
@@ -407,6 +426,8 @@ export default function App() {
     query={query}
     setQuery={setQuery}
     user={user}
+    theme={theme}
+    toggleTheme={toggleTheme}
     clientForm={clientForm}
     setClientForm={setClientForm}
     editingClient={editingClient}
@@ -439,7 +460,7 @@ export default function App() {
 </>;
 }
 
-function MobileShell({ active, setActive, displayName, business, totals, clients, invoices, transactions, notice, query, setQuery, user, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+function MobileShell({ active, setActive, displayName, welcomeMessage, business, totals, clients, invoices, transactions, notice, query, setQuery, user, theme, toggleTheme, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
     const activeClients = clients.filter(c => !c.archived);
   const alerts = getMobileAlerts({ clients, invoices, totals });
@@ -448,11 +469,11 @@ function MobileShell({ active, setActive, displayName, business, totals, clients
   return <div className="mobile-shell">
     <header className="mobile-top">
       <div className="mobile-brand"><span>♛</span><div><b>LG FLOW</b><small>{business.name || 'NDIS Operations'}</small></div></div>
-      <button className="mobile-signout" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button>
+      <div className="mobile-top-actions"><button className="mobile-theme" aria-label="Toggle theme" onClick={toggleTheme}>{theme === 'dark' ? '☀' : '◐'}</button><button className="mobile-signout" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button></div>
     </header>
     <main className="mobile-main">
       {notice && <div className="notice mobile-notice">{notice}</div>}
-      {active === 'Dashboard' && <MobileHome displayName={displayName} totals={totals} alerts={alerts} invoices={recentInvoices} clients={activeClients} setActive={setActive} />}
+      {active === 'Dashboard' && <MobileHome welcomeMessage={welcomeMessage} totals={totals} alerts={alerts} invoices={recentInvoices} clients={activeClients} setActive={setActive} />}
       {active === 'Clients' && <MobileClients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={cancelClient} />}
       {active === 'Invoices' && <MobileInvoices clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} cancel={cancelInvoice} query={query} setQuery={setQuery} />}
       {active === 'Transactions' && <MobileFinance clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
@@ -489,12 +510,12 @@ function getMobileAlerts({ clients, invoices, totals }) {
   return alerts.slice(0, 5);
 }
 
-function MobileHome({ displayName, totals, alerts, invoices, clients, setActive }) {
+function MobileHome({ welcomeMessage, totals, alerts, invoices, clients, setActive }) {
   return <section className="mobile-home">
-    <div className="mobile-hero"><small>Premium NDIS Operations</small><h2>Welcome back, {displayName}</h2><p>Here’s what’s happening with your business today.</p></div>
+    <div className="mobile-hero"><h2>{welcomeMessage}</h2><p>Here’s what’s happening with your business today.</p></div>
     <div className="mobile-kpis">
       <MiniKpi label="Revenue" value={money(totals.income)} />
-      <MiniKpi label="Outstanding" value={money(totals.outstanding)} />
+      <MiniKpi label="Expenses" value={money(totals.expenses)} />
       <MiniKpi label="Clients" value={totals.activeClients} />
       <MiniKpi label="Budget Left" value={money(totals.remainingBudget)} />
     </div>
@@ -597,14 +618,52 @@ function Records({ rows, empty, render }) { return rows.length ? rows.map(render
 function Stat({ label, value, tone, icon, trend }) { return <div className={`stat ${tone || ''}`}><div className="stat-icon">{icon}</div><small>{label}</small><strong>{value}</strong><em>{trend}</em><Spark /></div>; }
 function Spark() { return <svg viewBox="0 0 180 48" className="spark"><path d="M4 38 C22 40 24 31 38 30 C52 28 48 16 66 20 C82 25 82 34 100 29 C116 25 111 18 130 17 C150 16 151 29 176 10" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg>; }
 
+
+function CashflowOverview({ transactions }) {
+  const [period, setPeriod] = useState('30');
+  const days = Number(period);
+  const now = new Date();
+  const buckets = Array.from({ length: Math.min(days, 90) }, (_, index) => {
+    const d = new Date(now);
+    d.setDate(now.getDate() - (Math.min(days, 90) - 1 - index) * Math.ceil(days / Math.min(days, 90)));
+    return { date: d, income: 0, expenses: 0 };
+  });
+  const bucketFor = (date) => {
+    if (!buckets.length) return -1;
+    const diff = Math.floor((date - buckets[0].date) / 86400000);
+    return Math.max(0, Math.min(buckets.length - 1, Math.floor(diff / Math.ceil(days / buckets.length))));
+  };
+  transactions.forEach(t => {
+    const d = new Date(`${t.date || t.createdAt || todayISO()}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return;
+    const age = (now - d) / 86400000;
+    if (age < 0 || age > days) return;
+    const idx = bucketFor(d);
+    if (idx < 0) return;
+    if (t.type === 'income') buckets[idx].income += Number(t.amount || 0);
+    if (t.type === 'expense') buckets[idx].expenses += Number(t.amount || 0);
+  });
+  const max = Math.max(1, ...buckets.map(b => Math.max(b.income, b.expenses)));
+  const points = (key) => buckets.map((b, i) => {
+    const x = buckets.length === 1 ? 0 : (i / (buckets.length - 1)) * 660;
+    const y = 230 - (Number(b[key] || 0) / max) * 210;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const totalIncome = buckets.reduce((s,b)=>s+b.income,0);
+  const totalExpenses = buckets.reduce((s,b)=>s+b.expenses,0);
+  return <Card title="Cashflow Overview" className="wide" action={<select className="period-select" value={period} onChange={e => setPeriod(e.target.value)}><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 12 months</option></select>}>
+    <div className="chart"><div className="axis"><span>{money(max)}</span><span>{money(max * .75)}</span><span>{money(max * .5)}</span><span>{money(max * .25)}</span><span>$0</span></div><svg viewBox="0 0 660 260"><defs><linearGradient id="cashGold" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#d7b46a" stopOpacity=".55"/><stop offset="1" stopColor="#d7b46a" stopOpacity="0"/></linearGradient><linearGradient id="cashBlue" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#4f7cff" stopOpacity=".32"/><stop offset="1" stopColor="#4f7cff" stopOpacity="0"/></linearGradient></defs><polyline points={points('income')} fill="none" stroke="#d7b46a" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/><polyline points={points('expenses')} fill="none" stroke="#4f7cff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/></svg><div className="legend"><span className="gold-dot">Income {money(totalIncome)}</span><span className="blue-dot">Expenses {money(totalExpenses)}</span></div></div>
+  </Card>;
+}
+
 function Dashboard({ totals, invoices, transactions, clients, setActive }) {
   const activeClients = clients.filter(c => !c.archived);
   const clientSpend = (clientId) => invoices.filter(i => i.clientId === clientId).reduce((s, i) => s + Number(i.total || 0), 0);
   const topClients = [...activeClients].sort((a, b) => clientSpend(b.id) - clientSpend(a.id)).slice(0, 4);
   const expiringClients = activeClients.filter(c => { const d = daysUntil(c.planEndDate); return d !== null && d >= 0 && d <= 60; }).sort((a, b) => daysUntil(a.planEndDate) - daysUntil(b.planEndDate)).slice(0, 4);
   return <>
-    <div className="stat-grid"><Stat label="Total Revenue" value={money(totals.income)} tone="gold" icon="$" trend="Income received"/><Stat label="NDIS Budget" value={money(totals.totalBudget)} tone="blue" icon="◇" trend={`${money(totals.remainingBudget)} remaining`}/><Stat label="Active Clients" value={totals.activeClients} tone="green" icon="♙" trend={`${totals.expiringPlans} plans due in 30 days`}/><Stat label="Net Position" value={money(totals.net)} tone="violet" icon="▣" trend={`${money(totals.outstanding)} outstanding`}/></div>
-    <div className="dashboard-grid"><Card title="Cashflow Overview" className="wide" action={<button className="ghost">Last 30 days⌄</button>}><div className="chart"><div className="axis"><span>$8K</span><span>$6K</span><span>$4K</span><span>$2K</span><span>$0</span></div><svg viewBox="0 0 660 260"><defs><linearGradient id="cashGold" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#d7b46a" stopOpacity=".6"/><stop offset="1" stopColor="#d7b46a" stopOpacity="0"/></linearGradient><linearGradient id="cashBlue" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#4f7cff" stopOpacity=".35"/><stop offset="1" stopColor="#4f7cff" stopOpacity="0"/></linearGradient></defs><path d="M0 220 C70 190 90 195 140 160 C210 110 250 130 310 88 C390 45 440 72 500 40 C570 25 610 50 660 10 L660 260 L0 260 Z" fill="url(#cashGold)"/><path d="M0 220 C70 190 90 195 140 160 C210 110 250 130 310 88 C390 45 440 72 500 40 C570 25 610 50 660 10" fill="none" stroke="#d7b46a" strokeWidth="5" strokeLinecap="round"/><path d="M0 218 C70 205 110 215 160 195 C240 170 290 185 350 150 C420 120 470 137 530 105 C590 90 630 96 660 75 L660 260 L0 260 Z" fill="url(#cashBlue)"/><path d="M0 218 C70 205 110 215 160 195 C240 170 290 185 350 150 C420 120 470 137 530 105 C590 90 630 96 660 75" fill="none" stroke="#4f7cff" strokeWidth="4" strokeLinecap="round"/></svg><div className="legend"><span className="gold-dot">Income {money(totals.income)}</span><span className="blue-dot">Expenses {money(totals.expenses)}</span></div></div></Card>
+    <div className="stat-grid"><Stat label="Total Revenue" value={money(totals.income)} tone="gold" icon="$" trend="Income received"/><Stat label="Expenses" value={money(totals.expenses)} tone="blue" icon="−" trend="Business outgoings"/><Stat label="Active Clients" value={totals.activeClients} tone="green" icon="♙" trend={`${totals.expiringPlans} plans due in 30 days`}/><Stat label="Net Position" value={money(totals.net)} tone="violet" icon="▣" trend={`${money(totals.remainingBudget)} budget left`}/></div>
+    <div className="dashboard-grid"><CashflowOverview transactions={transactions} />
     <Card title="Recent Invoices" action={<button className="text-link" onClick={() => setActive('Invoices')}>View all</button>}><Records rows={invoices.slice(0,4)} empty="No invoices yet." render={i => <div className="invoice-row" key={i.id}><span className="accent-line"/><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong><em>{i.status || 'Generated'}</em><button>›</button></div>}/></Card></div>
     <div className="bottom-grid"><Card title="Upcoming Payments"><Records rows={invoices.slice(0,3)} empty="No upcoming payments." render={i => <div className="payment-row" key={i.id}><div className="date-tile"><span>{new Date(`${i.dueDate}T00:00:00`).toLocaleDateString(undefined,{month:'short'})}</span><b>{new Date(`${i.dueDate}T00:00:00`).getDate()}</b></div><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong></div>}/></Card><Card title="Top Clients by Revenue"><Records rows={topClients} empty="No clients yet." render={(c) => { const spent = clientSpend(c.id); const budget = Number(c.budget || 0); const pct = budget ? Math.min(100, Math.round((spent / budget) * 100)) : 0; return <div className="client-rank" key={c.id}><div className="mini-avatar">{(c.name||'C').split(' ').map(x=>x[0]).join('').slice(0,2)}</div><b>{c.name}</b><div className="bar"><span style={{width:`${pct || 6}%`}}/></div><strong>{money(spent)}</strong><small>{budget ? `${pct}% of ${money(budget)}` : 'No budget set'}</small></div>; }}/></Card><Card title="Plan Watch"><Records rows={expiringClients} empty="No plans expiring soon." render={c => <div className="feed" key={c.id}><span>◷</span><div><b>{c.name}</b><small>{daysUntil(c.planEndDate)} days left · Ends {fmt(c.planEndDate)}</small></div><time>{money(Number(c.budget || 0))}</time></div>}/></Card><Card title="Activity Feed"><Records rows={[...invoices.slice(0,2), ...transactions.slice(0,2)]} empty="No activity yet." render={(x, i) => <div className="feed" key={x.id}><span>{i%2?'$':'▤'}</span><div><b>{x.invoiceNumber ? `Invoice ${x.invoiceNumber} created` : x.description}</b><small>{x.clientName || 'No Client'}</small></div><time>{i+1}h ago</time></div>}/></Card></div>
   </>;
@@ -615,9 +674,10 @@ function Clients({ clients, form, setForm, editing, save, edit, archive, del, ca
   return <><Card title={editing ? 'Edit Client Profile' : 'Add NDIS Client'}><div className="grid"><Field label="Client Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field type="date" label="NDIS Plan Start" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="NDIS Plan End" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/><Field type="number" step="0.01" label="NDIS Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Client' : 'Save Client'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Client Portfolio"><div className="client-grid"><Records rows={active} empty="No active clients added yet." render={c => <div className="client-card" key={c.id}><div className="client-top"><div className="big-avatar">{(c.name||'C').split(' ').map(x=>x[0]).join('').slice(0,2)}</div><span className="pill green">Active</span></div><h4>{c.name}</h4><p>NDIS: {c.ndisNumber || '-'}</p><p>Plan: {fmt(c.planStartDate)} → {fmt(c.planEndDate)}</p><p>Budget: {money(c.budget)} · {(() => { const d = daysUntil(c.planEndDate); return d === null ? 'No end date' : d < 0 ? 'Plan ended' : `${d} days left`; })()}</p><p>{c.email || '-'} · {c.phone || '-'}</p><small>{c.address || '-'}</small><div className="actions"><button onClick={() => edit(c)}>Edit</button><button onClick={() => archive(c.id)}>Archive</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>}/></div></Card><Card title="Archived Clients"><Records rows={archived} empty="No archived clients." render={c => <div className="record" key={c.id}><h4>{c.name}</h4><p>NDIS: {c.ndisNumber || '-'}</p><p>Plan: {fmt(c.planStartDate)} → {fmt(c.planEndDate)} · Budget: {money(c.budget)}</p><div className="actions"><button onClick={() => edit(c)}>Edit</button><button onClick={() => archive(c.id)}>Unarchive</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>}/></Card></>;
 }
 
-function Invoices({ clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, cancel }) {
+function Invoices({ clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, cancel, query = '', setQuery = () => {} }) {
+  const filteredInvoices = invoices.filter(i => `${i.invoiceNumber} ${i.clientName} ${i.status || ''}`.toLowerCase().includes(String(query).toLowerCase()));
   const preview = form.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.rate || 0), 0);
-  return <><Card title={editing ? 'Edit Invoice' : 'Generate Invoice'}><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">Select active client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field type="date" label="Due Date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}/></div>{form.lines.map((line, idx) => <div className="line" key={line.id}><div className="line-head"><h4>Service Line {idx + 1}</h4><button className="danger" onClick={() => removeLine(line.id)}>Remove</button></div><div className="grid"><label><span>Support Item</span><select value={line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{ITEMS.map(i => <option key={i.label}>{i.label}</option>)}</select></label><Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/><Field label="Unit Type" value={line.unitType} onChange={e => setLine(line.id, 'unitType', e.target.value)}/><Field type="number" step="0.01" label="Quantity" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/><Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/></div><b className="subtotal">Subtotal {money(Number(line.quantity || 0) * Number(line.rate || 0))}</b></div>)}<button onClick={addLine}>+ Add Another Service</button><Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/><div className="total">Invoice total: {money(preview)}</div><button className="primary" onClick={save}>{editing ? 'Update Invoice' : 'Generate Invoice'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Invoice Register"><Records rows={invoices} empty="No invoices created yet." render={i => <details className="invoice-tile" key={i.id}><summary><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong><span className="pill">{i.status || 'Generated'}</span></summary><p>Issue: {fmt(i.issueDate)} · Due: {fmt(i.dueDate)} · NDIS: {i.ndisNumber || '-'}</p>{i.lines.map((l, idx) => <p key={l.id || idx}>{idx + 1}. {l.itemLabel} · {fmt(l.serviceDate)} · {l.quantity} {l.unitType} @ {money(l.rate)} = {money(l.lineTotal)}</p>)}{i.notes && <p>Notes: {i.notes}</p>}<div className="actions"><button onClick={() => edit(i)}>Edit</button><button onClick={() => exportPDF(i)}>Export PDF</button><button className="danger" onClick={() => del(i.id)}>Delete</button></div></details>}/></Card></>;
+  return <><Card title={editing ? 'Edit Invoice' : 'Generate Invoice'}><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">Select active client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field type="date" label="Due Date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}/></div>{form.lines.map((line, idx) => <div className="line" key={line.id}><div className="line-head"><h4>Service Line {idx + 1}</h4><button className="danger" onClick={() => removeLine(line.id)}>Remove</button></div><div className="grid"><label><span>Support Item</span><select value={line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{ITEMS.map(i => <option key={i.label}>{i.label}</option>)}</select></label><Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/><Field label="Unit Type" value={line.unitType} onChange={e => setLine(line.id, 'unitType', e.target.value)}/><Field type="number" step="0.01" label="Quantity" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/><Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/></div><b className="subtotal">Subtotal {money(Number(line.quantity || 0) * Number(line.rate || 0))}</b></div>)}<button onClick={addLine}>+ Add Another Service</button><Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/><div className="total">Invoice total: {money(preview)}</div><button className="primary" onClick={save}>{editing ? 'Update Invoice' : 'Generate Invoice'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Invoice Register" action={<label className="inline-search"><input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)} /></label>}><Records rows={filteredInvoices} empty="No invoices created yet." render={i => <details className="invoice-tile" key={i.id}><summary><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong><span className="pill">{i.status || 'Generated'}</span></summary><p>Issue: {fmt(i.issueDate)} · Due: {fmt(i.dueDate)} · NDIS: {i.ndisNumber || '-'}</p>{i.lines.map((l, idx) => <p key={l.id || idx}>{idx + 1}. {l.itemLabel} · {fmt(l.serviceDate)} · {l.quantity} {l.unitType} @ {money(l.rate)} = {money(l.lineTotal)}</p>)}{i.notes && <p>Notes: {i.notes}</p>}<div className="actions"><button onClick={() => edit(i)}>Edit</button><button onClick={() => exportPDF(i)}>Export PDF</button><button className="danger" onClick={() => del(i.id)}>Delete</button></div></details>}/></Card></>;
 }
 
 function Transactions({ clients, transactions, form, setForm, editing, save, edit, del, cancel }) {
