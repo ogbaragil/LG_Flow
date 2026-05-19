@@ -43,6 +43,14 @@ const emptyClient = { name: '', ndisNumber: '', email: '', phone: '', address: '
 const emptyLine = () => ({ id: makeId('line'), itemLabel: ITEMS[0].label, serviceDate: todayISO(), unitType: 'hours', quantity: '1', rate: String(ITEMS[0].rate) });
 const emptyInvoice = () => ({ clientId: '', dueDate: addDaysISO(7), notes: '', lines: [emptyLine()] });
 const emptyTxn = { clientId: '', type: 'expense', status: 'pending', category: '', description: '', amount: '', date: todayISO() };
+const INVOICE_STATUSES = ['Draft', 'Pending', 'Paid', 'Cancelled'];
+const normaliseInvoiceStatus = (status) => {
+  const value = String(status || '').toLowerCase();
+  if (value === 'paid') return 'Paid';
+  if (value === 'cancelled' || value === 'canceled') return 'Cancelled';
+  if (value === 'draft') return 'Draft';
+  return 'Pending';
+};
 async function syncSnapshot(payload, user) {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   if (!user?.id) return { ok: false, message: 'Please sign in first.' };
@@ -159,7 +167,7 @@ export default function App() {
   const totals = useMemo(() => {
     const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
     const expenses = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount || 0), 0);
-    const outstanding = invoices.filter(i => i.status !== 'Paid').reduce((s, i) => s + Number(i.total || 0), 0);
+    const outstanding = invoices.filter(i => !['Paid', 'Cancelled'].includes(normaliseInvoiceStatus(i.status))).reduce((s, i) => s + Number(i.total || 0), 0);
     const activeClients = clients.filter(c => !c.archived);
     const totalBudget = activeClients.reduce((s, c) => s + Number(c.budget || 0), 0);
     const invoicedTotal = invoices.reduce((s, i) => s + Number(i.total || 0), 0);
@@ -184,18 +192,99 @@ export default function App() {
 
   const setLine = (lineId, field, value) => setInvoiceForm(p => ({ ...p, lines: p.lines.map(l => l.id === lineId ? { ...l, [field]: value } : l) }));
   const selectItem = (lineId, label) => { const item = ITEMS.find(i => i.label === label); setInvoiceForm(p => ({ ...p, lines: p.lines.map(l => l.id === lineId ? { ...l, itemLabel: label, rate: String(item.rate), unitType: item.unitType } : l) })); };
+
+  const syncInvoiceTransaction = (invoice, status = invoice?.status, note = '') => {
+    if (!invoice?.id) return;
+    const nextStatus = normaliseInvoiceStatus(status);
+    setTransactions(prev => {
+      const existing = prev.find(t => t.invoiceId === invoice.id);
+      if (nextStatus === 'Cancelled' || nextStatus === 'Draft') {
+        return existing ? prev.filter(t => t.invoiceId !== invoice.id) : prev;
+      }
+      const tx = {
+        ...(existing || {}),
+        id: existing?.id || makeId('txn'),
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        clientId: invoice.clientId || '',
+        clientName: invoice.clientName || '',
+        type: 'income',
+        status: nextStatus === 'Paid' ? 'paid' : 'pending',
+        category: 'Invoice',
+        description: `Invoice ${invoice.invoiceNumber} - ${invoice.clientName || 'Client'}`,
+        amount: Number(invoice.total || 0),
+        date: nextStatus === 'Paid' ? todayISO() : (invoice.issueDate || todayISO()),
+        notes: note || existing?.notes || '',
+        updatedAt: new Date().toISOString(),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+      };
+      return existing ? prev.map(t => t.invoiceId === invoice.id ? tx : t) : [tx, ...prev];
+    });
+  };
+
+  const updateInvoiceStatus = (invoiceId, status, note = '') => {
+    const current = invoices.find(inv => inv.id === invoiceId);
+    if (!current) return;
+    const nextStatus = normaliseInvoiceStatus(status);
+    const updated = {
+      ...current,
+      status: nextStatus,
+      statusNote: note,
+      statusHistory: [
+        ...(current.statusHistory || []),
+        { status: nextStatus, note, at: new Date().toISOString() },
+      ],
+      updatedAt: new Date().toISOString(),
+    };
+    setInvoices(prev => prev.map(inv => inv.id === invoiceId ? updated : inv));
+    syncInvoiceTransaction(updated, nextStatus, note);
+    showNotice(`Invoice ${current.invoiceNumber} updated to ${nextStatus}.`);
+  };
+
   const saveInvoice = () => {
     const client = clients.find(c => c.id === invoiceForm.clientId && !c.archived);
     if (!client) return alert('Please select an active client.');
     const lines = invoiceForm.lines.map(l => ({ ...l, quantity: Number(l.quantity), rate: Number(l.rate), lineTotal: Number(l.quantity) * Number(l.rate) }));
     if (lines.some(l => !l.quantity || l.quantity <= 0 || Number.isNaN(l.rate))) return alert('Check quantity and rate values.');
     const total = lines.reduce((s, l) => s + l.lineTotal, 0);
+    const baseInvoice = {
+      clientId: client.id,
+      clientName: client.name,
+      clientEmail: client.email,
+      clientPhone: client.phone,
+      clientAddress: client.address,
+      ndisNumber: client.ndisNumber,
+      clientPlanStartDate: client.planStartDate,
+      clientPlanEndDate: client.planEndDate,
+      clientBudget: Number(client.budget || 0),
+      dueDate: invoiceForm.dueDate,
+      notes: invoiceForm.notes,
+      lines,
+      total,
+      updatedAt: new Date().toISOString(),
+    };
+    let savedInvoice;
     if (editingInvoice) {
-      setInvoices(prev => prev.map(inv => inv.id === editingInvoice ? { ...inv, clientId: client.id, clientName: client.name, clientEmail: client.email, clientPhone: client.phone, clientAddress: client.address, ndisNumber: client.ndisNumber, clientPlanStartDate: client.planStartDate, clientPlanEndDate: client.planEndDate, clientBudget: Number(client.budget || 0), dueDate: invoiceForm.dueDate, notes: invoiceForm.notes, lines, total, updatedAt: new Date().toISOString() } : inv));
+      const current = invoices.find(inv => inv.id === editingInvoice);
+      savedInvoice = { ...current, ...baseInvoice, status: normaliseInvoiceStatus(current?.status), statusHistory: current?.statusHistory || [] };
+      setInvoices(prev => prev.map(inv => inv.id === editingInvoice ? savedInvoice : inv));
+      if (['Pending', 'Paid'].includes(normaliseInvoiceStatus(savedInvoice.status))) {
+        syncInvoiceTransaction(savedInvoice, savedInvoice.status, savedInvoice.statusNote || '');
+      }
     } else {
       const stamp = todayISO().replace(/-/g, '');
       const next = invoices.filter(i => String(i.invoiceNumber).startsWith(`INV-${stamp}-`)).length + 1;
-      setInvoices(prev => [{ id: makeId('invoice'), invoiceNumber: `INV-${stamp}-${String(next).padStart(3, '0')}`, clientId: client.id, clientName: client.name, clientEmail: client.email, clientPhone: client.phone, clientAddress: client.address, ndisNumber: client.ndisNumber, clientPlanStartDate: client.planStartDate, clientPlanEndDate: client.planEndDate, clientBudget: Number(client.budget || 0), issueDate: todayISO(), dueDate: invoiceForm.dueDate, lines, total, notes: invoiceForm.notes, status: 'Awaiting Payment', createdAt: new Date().toISOString() }, ...prev]);
+      savedInvoice = {
+        id: makeId('invoice'),
+        invoiceNumber: `INV-${stamp}-${String(next).padStart(3, '0')}`,
+        issueDate: todayISO(),
+        status: 'Pending',
+        statusHistory: [{ status: 'Pending', note: 'Invoice generated', at: new Date().toISOString() }],
+        createdAt: new Date().toISOString(),
+        ...baseInvoice,
+      };
+      setInvoices(prev => [savedInvoice, ...prev]);
+      syncInvoiceTransaction(savedInvoice, 'Pending', 'Invoice generated');
     }
     setInvoiceForm(emptyInvoice()); setEditingInvoice(null); showNotice('Invoice saved.');
   };
@@ -407,7 +496,7 @@ export default function App() {
       {notice && <div className="notice">{notice}</div>}
       {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} setActive={setActive}/>} 
       {active === 'Clients' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
-      {active === 'Invoices' && <Invoices clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => setInvoices(p => p.filter(i => i.id !== id))} exportPDF={exportPDF} query={query} setQuery={setQuery} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
+      {active === 'Invoices' && <Invoices clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} query={query} setQuery={setQuery} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Transactions' && <Transactions clients={clients.filter(c => !c.archived)} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
       {active === 'Settings' && <Settings business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>} 
     </main>
@@ -445,8 +534,9 @@ export default function App() {
     removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))}
     saveInvoice={saveInvoice}
     editInvoice={editInvoice}
-    deleteInvoice={id => setInvoices(p => p.filter(i => i.id !== id))}
+    deleteInvoice={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }}
     exportPDF={exportPDF}
+    updateInvoiceStatus={updateInvoiceStatus}
     cancelInvoice={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}
     txnForm={txnForm}
     setTxnForm={setTxnForm}
@@ -460,7 +550,7 @@ export default function App() {
 </>;
 }
 
-function MobileShell({ active, setActive, displayName, welcomeMessage, business, totals, clients, invoices, transactions, notice, query, setQuery, user, theme, toggleTheme, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+function MobileShell({ active, setActive, displayName, welcomeMessage, business, totals, clients, invoices, transactions, notice, query, setQuery, user, theme, toggleTheme, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
     const activeClients = clients.filter(c => !c.archived);
   const alerts = getMobileAlerts({ clients, invoices, totals });
@@ -475,7 +565,7 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
       {notice && <div className="notice mobile-notice">{notice}</div>}
       {active === 'Dashboard' && <MobileHome welcomeMessage={welcomeMessage} totals={totals} alerts={alerts} invoices={recentInvoices} clients={activeClients} setActive={setActive} />}
       {active === 'Clients' && <MobileClients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={cancelClient} />}
-      {active === 'Invoices' && <MobileInvoices clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} cancel={cancelInvoice} query={query} setQuery={setQuery} />}
+      {active === 'Invoices' && <MobileInvoices clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={cancelInvoice} query={query} setQuery={setQuery} />}
       {active === 'Transactions' && <MobileFinance clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
       {active === 'Settings' && <div className="mobile-settings">{settings}</div>}
     </main>
@@ -517,7 +607,7 @@ function MobileHome({ welcomeMessage, totals, alerts, invoices, clients, setActi
       <MiniKpi label="Revenue" value={money(totals.income)} />
       <MiniKpi label="Expenses" value={money(totals.expenses)} />
       <MiniKpi label="Clients" value={totals.activeClients} />
-      <MiniKpi label="Budget Left" value={money(totals.remainingBudget)} />
+      <MiniKpi label="Net" value={money(totals.net)} />
     </div>
     <div className="mobile-quick"><button onClick={() => setActive('Invoices')}>+ Invoice</button><button onClick={() => setActive('Transactions')}>+ Transaction</button></div>
     <MobilePanel title="Today" action={alerts.length ? `${alerts.length} alerts` : 'All clear'}>{alerts.length ? alerts.map((a,i) => <div className="mobile-alert" key={i}><span>{a.type}</span><div><b>{a.title}</b><small>{a.meta}</small></div></div>) : <p className="mobile-empty">No urgent NDIS alerts today.</p>}</MobilePanel>
@@ -535,11 +625,13 @@ function MobileClients({ clients, form, setForm, editing, save, edit, archive, d
   return <section className="mobile-page">
     <div className="mobile-title"><h2>Clients</h2><button onClick={() => setShowForm(v => !v)}>{showForm || editing ? 'Hide form' : '+ Client'}</button></div>
     {(showForm || editing) && <MobilePanel title={editing ? 'Edit client' : 'New client'}><Field label="Client Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><div className="mobile-two"><Field type="date" label="Plan Start" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="Plan End" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/></div><Field type="number" label="Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/><button className="primary" onClick={() => { save(); setShowForm(false); }}>{editing ? 'Update client' : 'Save client'}</button>{editing && <button onClick={cancel}>Cancel</button>}</MobilePanel>}
-    <Records rows={active} empty="No active clients added yet." render={c => <div className="mobile-client-card" key={c.id}><div><span className="mobile-avatar">{(c.name||'C').split(' ').map(x=>x[0]).join('').slice(0,2)}</span><div><h3>{c.name}</h3><small>NDIS {c.ndisNumber || '-'}</small></div></div><div className="budget-line"><span style={{width: `${Math.min(100, Number(c.budget) ? 35 : 0)}%`}} /></div><p>Plan: {fmt(c.planStartDate)} → {fmt(c.planEndDate)}</p><p>Budget: {money(c.budget)} · {(() => { const d = daysUntil(c.planEndDate); return d === null ? 'No end date' : d < 0 ? 'Ended' : `${d} days left`; })()}</p><div className="mobile-card-actions"><button onClick={() => { edit(c); setShowForm(true); }}>Edit</button><button onClick={() => archive(c.id)}>Archive</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>} />
+    <MobilePanel title="Active clients" action={`${active.length} clients`}>
+      <div className="compact-client-list"><Records rows={active} empty="No active clients added yet." render={c => <div className="compact-client-row" key={c.id}><div><b>{c.name}</b><small>NDIS {c.ndisNumber || '-'} · Plan {fmt(c.planEndDate)}</small></div><div><strong>{money(c.budget)}</strong><small>{(() => { const d = daysUntil(c.planEndDate); return d === null ? 'No end date' : d < 0 ? 'Ended' : `${d} days left`; })()}</small></div><div className="compact-actions"><button onClick={() => { edit(c); setShowForm(true); }}>Edit</button><button onClick={() => archive(c.id)}>Archive</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>} /></div>
+    </MobilePanel>
   </section>;
 }
 
-function MobileInvoices({ clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, cancel, query, setQuery }) {
+function MobileInvoices({ clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, onStatusChange, cancel, query, setQuery }) {
   const [step, setStep] = useState(1);
   const line = form.lines[0] || emptyLine();
   const preview = form.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.rate || 0), 0);
@@ -554,7 +646,7 @@ function MobileInvoices({ clients, invoices, form, setForm, editing, setLine, se
       {step === 4 && <div className="review-box"><small>Invoice total</small><b>{money(preview)}</b><p>Check the client, service dates, rates, and notes before generating.</p></div>}
       <div className="mobile-wizard-actions"><button disabled={step === 1} onClick={() => setStep(s => Math.max(1, s - 1))}>Back</button>{step < 4 ? <button className="primary" onClick={() => setStep(s => Math.min(4, s + 1))}>Next</button> : <button className="primary" onClick={() => { save(); setStep(1); }}>{editing ? 'Update invoice' : 'Generate invoice'}</button>}</div>{editing && <button onClick={cancel}>Cancel edit</button>}
     </MobilePanel>
-    <MobilePanel title="Invoice register"><label className="mobile-search"><input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)}/></label><Records rows={filtered} empty="No invoices created yet." render={i => <div className="mobile-invoice-card" key={i.id}><div><b>{i.invoiceNumber}</b><span>{money(i.total)}</span></div><small>{i.clientName} · Due {fmt(i.dueDate)}</small><div className="mobile-card-actions"><button onClick={() => edit(i)}>Edit</button><button onClick={() => exportPDF(i)}>PDF</button><button className="danger" onClick={() => del(i.id)}>Delete</button></div></div>} /></MobilePanel>
+    <MobilePanel title="Invoice register"><label className="mobile-search"><input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)}/></label><Records rows={filtered} empty="No invoices created yet." render={i => <div className="mobile-invoice-card" key={i.id}><div><b>{i.invoiceNumber}</b><span>{money(i.total)}</span></div><small>{i.clientName} · Due {fmt(i.dueDate)}</small><InvoiceStatusControls invoice={i} onChange={onStatusChange} compact /><div className="mobile-card-actions"><button onClick={() => edit(i)}>Edit</button><button onClick={() => exportPDF(i)}>PDF</button><button className="danger" onClick={() => del(i.id)}>Delete</button></div></div>} /></MobilePanel>
   </section>;
 }
 
@@ -591,6 +683,11 @@ function MobileFinance({ clients, transactions, form, setForm, editing, save, ed
   return <section className="mobile-page">
     <div className="mobile-title"><h2>Finance</h2><span>{money(income-expenses)} net</span></div>
     <div className="mobile-kpis two"><MiniKpi label="Income" value={money(income)} /><MiniKpi label="Expenses" value={money(expenses)} /></div>
+    <MobilePanel title={editing ? 'Edit transaction' : 'New transaction'}>
+      <label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+      <div className="mobile-two"><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label></div>
+      <Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><div className="mobile-two"><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update transaction' : 'Save transaction'}</button>{editing && <button onClick={cancel}>Cancel</button>}
+    </MobilePanel>
     <MobilePanel title="Transaction filters" action={`${rows.length} shown`}>
       <Field label="Search" value={filters.query} placeholder="Description, client, category" onChange={e => setFilter('query', e.target.value)} />
       <div className="mobile-two">
@@ -601,11 +698,6 @@ function MobileFinance({ clients, transactions, form, setForm, editing, save, ed
         <label><span>Client</span><select value={filters.clientId} onChange={e => setFilter('clientId', e.target.value)}><option value="all">All clients</option><option value="none">No client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <label><span>Sort</span><select value={filters.sort} onChange={e => setFilter('sort', e.target.value)}><option value="date_desc">Newest date</option><option value="date_asc">Oldest date</option><option value="amount_desc">Highest amount</option><option value="amount_asc">Lowest amount</option></select></label>
       </div>
-    </MobilePanel>
-    <MobilePanel title={editing ? 'Edit transaction' : 'New transaction'}>
-      <label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-      <div className="mobile-two"><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label></div>
-      <Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><div className="mobile-two"><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update transaction' : 'Save transaction'}</button>{editing && <button onClick={cancel}>Cancel</button>}
     </MobilePanel>
     <MobilePanel title="Transactions"><Records rows={rows.slice(0,12)} empty="No matching transactions found." render={t => <div className="mobile-list-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No client'} · {t.category || 'General'} · {fmt(t.date)} · {(t.status || 'paid')}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>} /></MobilePanel>
   </section>;
@@ -670,14 +762,36 @@ function Dashboard({ totals, invoices, transactions, clients, setActive }) {
 }
 
 function Clients({ clients, form, setForm, editing, save, edit, archive, del, cancel }) {
-  const active = clients.filter(c => !c.archived), archived = clients.filter(c => c.archived);
-  return <><Card title={editing ? 'Edit Client Profile' : 'Add NDIS Client'}><div className="grid"><Field label="Client Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field type="date" label="NDIS Plan Start" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="NDIS Plan End" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/><Field type="number" step="0.01" label="NDIS Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Client' : 'Save Client'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Client Portfolio"><div className="client-grid"><Records rows={active} empty="No active clients added yet." render={c => <div className="client-card" key={c.id}><div className="client-top"><div className="big-avatar">{(c.name||'C').split(' ').map(x=>x[0]).join('').slice(0,2)}</div><span className="pill green">Active</span></div><h4>{c.name}</h4><p>NDIS: {c.ndisNumber || '-'}</p><p>Plan: {fmt(c.planStartDate)} → {fmt(c.planEndDate)}</p><p>Budget: {money(c.budget)} · {(() => { const d = daysUntil(c.planEndDate); return d === null ? 'No end date' : d < 0 ? 'Plan ended' : `${d} days left`; })()}</p><p>{c.email || '-'} · {c.phone || '-'}</p><small>{c.address || '-'}</small><div className="actions"><button onClick={() => edit(c)}>Edit</button><button onClick={() => archive(c.id)}>Archive</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>}/></div></Card><Card title="Archived Clients"><Records rows={archived} empty="No archived clients." render={c => <div className="record" key={c.id}><h4>{c.name}</h4><p>NDIS: {c.ndisNumber || '-'}</p><p>Plan: {fmt(c.planStartDate)} → {fmt(c.planEndDate)} · Budget: {money(c.budget)}</p><div className="actions"><button onClick={() => edit(c)}>Edit</button><button onClick={() => archive(c.id)}>Unarchive</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>}/></Card></>;
+  const active = clients.filter(c => !c.archived);
+  const archived = clients.filter(c => c.archived);
+  const ClientTable = ({ rows, archivedView = false }) => <div className="client-table"><div className="client-table-head"><span>Client</span><span>NDIS / Plan</span><span>Budget</span><span>Contact</span><span>Actions</span></div><Records rows={rows} empty={archivedView ? 'No archived clients.' : 'No active clients added yet.'} render={c => <div className="client-table-row" key={c.id}><div><b>{c.name}</b><small>{c.address || '-'}</small></div><div><b>{c.ndisNumber || '-'}</b><small>{fmt(c.planStartDate)} → {fmt(c.planEndDate)}</small></div><div><b>{money(c.budget)}</b><small>{(() => { const d = daysUntil(c.planEndDate); return d === null ? 'No end date' : d < 0 ? 'Plan ended' : `${d} days left`; })()}</small></div><div><b>{c.email || '-'}</b><small>{c.phone || '-'}</small></div><div className="actions"><button onClick={() => edit(c)}>Edit</button><button onClick={() => archive(c.id)}>{archivedView ? 'Unarchive' : 'Archive'}</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>} /></div>;
+  return <><Card title={editing ? 'Edit NDIS Client' : 'Add NDIS Client'}><div className="grid"><Field label="Client Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><Field type="date" label="Plan Start Date" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="Plan End Date" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/><Field type="number" step="0.01" label="Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Client' : 'Save Client'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Saved Clients" action={`${active.length} active`}><ClientTable rows={active} /></Card><Card title="Archived Clients" action={`${archived.length} archived`}><ClientTable rows={archived} archivedView /></Card></>;
 }
 
-function Invoices({ clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, cancel, query = '', setQuery = () => {} }) {
+function Invoices({ clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, onStatusChange, cancel, query = '', setQuery = () => {} }) {
   const filteredInvoices = invoices.filter(i => `${i.invoiceNumber} ${i.clientName} ${i.status || ''}`.toLowerCase().includes(String(query).toLowerCase()));
   const preview = form.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.rate || 0), 0);
-  return <><Card title={editing ? 'Edit Invoice' : 'Generate Invoice'}><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">Select active client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field type="date" label="Due Date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}/></div>{form.lines.map((line, idx) => <div className="line" key={line.id}><div className="line-head"><h4>Service Line {idx + 1}</h4><button className="danger" onClick={() => removeLine(line.id)}>Remove</button></div><div className="grid"><label><span>Support Item</span><select value={line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{ITEMS.map(i => <option key={i.label}>{i.label}</option>)}</select></label><Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/><Field label="Unit Type" value={line.unitType} onChange={e => setLine(line.id, 'unitType', e.target.value)}/><Field type="number" step="0.01" label="Quantity" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/><Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/></div><b className="subtotal">Subtotal {money(Number(line.quantity || 0) * Number(line.rate || 0))}</b></div>)}<button onClick={addLine}>+ Add Another Service</button><Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/><div className="total">Invoice total: {money(preview)}</div><button className="primary" onClick={save}>{editing ? 'Update Invoice' : 'Generate Invoice'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Invoice Register" action={<label className="inline-search"><input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)} /></label>}><Records rows={filteredInvoices} empty="No invoices created yet." render={i => <details className="invoice-tile" key={i.id}><summary><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong><span className="pill">{i.status || 'Generated'}</span></summary><p>Issue: {fmt(i.issueDate)} · Due: {fmt(i.dueDate)} · NDIS: {i.ndisNumber || '-'}</p>{i.lines.map((l, idx) => <p key={l.id || idx}>{idx + 1}. {l.itemLabel} · {fmt(l.serviceDate)} · {l.quantity} {l.unitType} @ {money(l.rate)} = {money(l.lineTotal)}</p>)}{i.notes && <p>Notes: {i.notes}</p>}<div className="actions"><button onClick={() => edit(i)}>Edit</button><button onClick={() => exportPDF(i)}>Export PDF</button><button className="danger" onClick={() => del(i.id)}>Delete</button></div></details>}/></Card></>;
+  return <><Card title={editing ? 'Edit Invoice' : 'Generate Invoice'}><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">Select active client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field type="date" label="Due Date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}/></div>{form.lines.map((line, idx) => <div className="line" key={line.id}><div className="line-head"><h4>Service Line {idx + 1}</h4><button className="danger" onClick={() => removeLine(line.id)}>Remove</button></div><div className="grid"><label><span>Support Item</span><select value={line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{ITEMS.map(i => <option key={i.label}>{i.label}</option>)}</select></label><Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/><Field label="Unit Type" value={line.unitType} onChange={e => setLine(line.id, 'unitType', e.target.value)}/><Field type="number" step="0.01" label="Quantity" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/><Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/></div><b className="subtotal">Subtotal {money(Number(line.quantity || 0) * Number(line.rate || 0))}</b></div>)}<button onClick={addLine}>+ Add Another Service</button><Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/><div className="total">Invoice total: {money(preview)}</div><button className="primary" onClick={save}>{editing ? 'Update Invoice' : 'Generate Invoice'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Invoice Register" action={<label className="inline-search"><input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)} /></label>}><Records rows={filteredInvoices} empty="No invoices created yet." render={i => <details className="invoice-tile" key={i.id}><summary><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong><span className="pill">{i.status || 'Generated'}</span></summary><p>Issue: {fmt(i.issueDate)} · Due: {fmt(i.dueDate)} · NDIS: {i.ndisNumber || '-'}</p>{i.lines.map((l, idx) => <p key={l.id || idx}>{idx + 1}. {l.itemLabel} · {fmt(l.serviceDate)} · {l.quantity} {l.unitType} @ {money(l.rate)} = {money(l.lineTotal)}</p>)}{i.notes && <p>Notes: {i.notes}</p>}<InvoiceStatusControls invoice={i} onChange={onStatusChange} /><div className="actions"><button onClick={() => edit(i)}>Edit</button><button onClick={() => exportPDF(i)}>Export PDF</button><button className="danger" onClick={() => del(i.id)}>Delete</button></div></details>}/></Card></>;
+}
+
+
+function InvoiceStatusControls({ invoice, onChange, compact = false }) {
+  const [status, setStatus] = useState(normaliseInvoiceStatus(invoice.status));
+  const [note, setNote] = useState(invoice.statusNote || '');
+  useEffect(() => {
+    setStatus(normaliseInvoiceStatus(invoice.status));
+    setNote(invoice.statusNote || '');
+  }, [invoice.id, invoice.status, invoice.statusNote]);
+  const apply = () => onChange?.(invoice.id, status, note);
+  const history = invoice.statusHistory || [];
+  return <div className={compact ? 'invoice-status compact' : 'invoice-status'}>
+    <div className="status-row">
+      <label><span>Status</span><select value={status} onChange={e => setStatus(e.target.value)}>{INVOICE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}</select></label>
+      <label><span>Status note</span><input value={note} placeholder="Optional note" onChange={e => setNote(e.target.value)} /></label>
+      <button className="primary" onClick={apply}>Update status</button>
+    </div>
+    {!compact && history.length > 0 && <small className="status-history">Last update: {history[history.length - 1].status} · {fmt(String(history[history.length - 1].at || '').slice(0,10))}{history[history.length - 1].note ? ` · ${history[history.length - 1].note}` : ''}</small>}
+  </div>;
 }
 
 function Transactions({ clients, transactions, form, setForm, editing, save, edit, del, cancel }) {
