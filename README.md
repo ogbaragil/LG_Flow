@@ -30,3 +30,8 @@ Run `supabase/schema.sql` in your LG Flow Supabase project.
 - Business name, ABN, email, phone, address and payment details are stored in the user's private cloud snapshot.
 - Exported invoices use the signed-in user's business information.
 - Settings includes editable business profile.
+
+
+## NDIS Pricing Manager
+
+Settings includes an editable NDIS Pricing Manager. The support item number, item name, unit and rate are saved in each user's business profile/cloud snapshot and are used by invoice generation for future invoices.

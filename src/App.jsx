@@ -4,6 +4,21 @@ import { supabase, isSupabaseConfigured, supabaseConfigSource } from './supabase
 
 const STORAGE_KEY = 'lg_flow_pwa_v2_premium';
 const TABS = ['Dashboard', 'Clients', 'Invoices', 'Transactions', 'Settings'];
+const DEFAULT_PRICING_ITEMS = [
+  { id: 'selfcare-weekday-daytime', group: 'Self Care Supports', itemNumber: '01_011_0107_1_1', label: 'Assistance With Self-Care Activities - Standard - Weekday Daytime', unitType: 'Hour', rate: 70.23, archived: false },
+  { id: 'selfcare-weekday-evening', group: 'Self Care Supports', itemNumber: '01_015_0107_1_1', label: 'Assistance With Self-Care Activities - Standard - Weekday Evening', unitType: 'Hour', rate: 77.38, archived: false },
+  { id: 'selfcare-weekday-night', group: 'Self Care Supports', itemNumber: '01_002_0107_1_1', label: 'Assistance With Self-Care Activities - Standard - Weekday Night', unitType: 'Hour', rate: 78.81, archived: false },
+  { id: 'selfcare-saturday', group: 'Self Care Supports', itemNumber: '01_013_0107_1_1', label: 'Assistance With Self-Care Activities - Standard - Saturday', unitType: 'Hour', rate: 98.83, archived: false },
+  { id: 'selfcare-sunday', group: 'Self Care Supports', itemNumber: '01_014_0107_1_1', label: 'Assistance With Self-Care Activities - Standard - Sunday', unitType: 'Hour', rate: 127.43, archived: false },
+  { id: 'selfcare-public-holiday', group: 'Self Care Supports', itemNumber: '01_012_0107_1_1', label: 'Assistance With Self-Care Activities - Standard - Public Holiday', unitType: 'Hour', rate: 156.03, archived: false },
+  { id: 'community-weekday-daytime', group: 'Community Access', itemNumber: '04_104_0125_6_1', label: 'Access Community Social and Rec Activ - Standard - Weekday Daytime', unitType: 'Hour', rate: 70.23, archived: false },
+  { id: 'community-weekday-evening', group: 'Community Access', itemNumber: '04_103_0125_6_1', label: 'Access Community Social and Rec Activ - Standard - Weekday Evening', unitType: 'Hour', rate: 77.38, archived: false },
+  { id: 'community-saturday', group: 'Community Access', itemNumber: '04_105_0125_6_1', label: 'Access Community Social and Rec Activ - Standard - Saturday', unitType: 'Hour', rate: 98.83, archived: false },
+  { id: 'community-sunday', group: 'Community Access', itemNumber: '04_106_0125_6_1', label: 'Access Community Social and Rec Activ - Standard - Sunday', unitType: 'Hour', rate: 127.43, archived: false },
+  { id: 'community-public-holiday', group: 'Community Access', itemNumber: '04_102_0125_6_1', label: 'Access Community Social and Rec Activ - Standard - Public Holiday', unitType: 'Hour', rate: 156.03, archived: false },
+  { id: 'establishment-community', group: 'Establishment Fees', itemNumber: '04_049_0125_1_1', label: 'Establishment Fee for Personal Care/Participation', unitType: 'Each', rate: 702.30, archived: false },
+  { id: 'establishment-selfcare', group: 'Establishment Fees', itemNumber: '01_049_0107_1_1', label: 'Establishment Fee for Personal Care/Participation', unitType: 'Each', rate: 702.30, archived: false },
+];
 const EMPTY_BUSINESS = {
   name: '',
   abn: '',
@@ -12,13 +27,21 @@ const EMPTY_BUSINESS = {
   address: '',
   paymentDetails: '',
   logoUrl: '',
+  pricingItems: DEFAULT_PRICING_ITEMS,
 };
-const ITEMS = [
-  { label: 'Self-Care Support', rate: 70.23, unitType: 'hours' },
-  { label: 'Community Access', rate: 70.23, unitType: 'hours' },
-  { label: 'Transport', rate: 1, unitType: 'km' },
-  { label: 'Establishment Fee for Personal Care/Participation', rate: 702.3, unitType: 'hours' },
-];
+const getPricingItems = (business) => {
+  const source = Array.isArray(business?.pricingItems) && business.pricingItems.length ? business.pricingItems : DEFAULT_PRICING_ITEMS;
+  return source.map((item, idx) => ({
+    id: item.id || item.itemNumber || `pricing_${idx}`,
+    group: item.group || 'Custom Items',
+    itemNumber: item.itemNumber || '',
+    label: item.label || item.name || 'Untitled support item',
+    unitType: item.unitType || item.unit || 'Hour',
+    rate: Number(item.rate || 0),
+    archived: Boolean(item.archived),
+  }));
+};
+const getActivePricingItems = (business) => getPricingItems(business).filter(item => !item.archived);
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const addDaysISO = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
 const makeId = (p) => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -40,7 +63,7 @@ const daysUntil = (dateStr) => { if (!dateStr) return null; const end = new Date
 const fileToDataUrl = (file) => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
 const safeText = (value) => String(value ?? '');
 const emptyClient = { name: '', ndisNumber: '', email: '', phone: '', address: '', planStartDate: '', planEndDate: '', budget: '' };
-const emptyLine = () => ({ id: makeId('line'), itemLabel: ITEMS[0].label, serviceDate: todayISO(), unitType: 'hours', quantity: '1', rate: String(ITEMS[0].rate) });
+const emptyLine = () => { const item = DEFAULT_PRICING_ITEMS[0]; return { id: makeId('line'), itemCode: item.itemNumber, itemLabel: item.label, serviceDate: todayISO(), unitType: item.unitType, quantity: '1', rate: String(item.rate), notes: '' }; };
 const emptyInvoice = () => ({ clientId: '', dueDate: addDaysISO(7), notes: '', lines: [emptyLine()] });
 const emptyTxn = { clientId: '', type: 'expense', status: 'pending', category: '', description: '', amount: '', date: todayISO() };
 const INVOICE_STATUSES = ['Draft', 'Pending', 'Paid', 'Cancelled'];
@@ -178,6 +201,7 @@ export default function App() {
 
   const filteredInvoices = invoices.filter(i => `${i.invoiceNumber} ${i.clientName}`.toLowerCase().includes(query.toLowerCase())).slice(0, 6);
   const payload = { business, clients, invoices, transactions };
+  const pricingItems = useMemo(() => getActivePricingItems(business), [business]);
   const showNotice = (message) => { setNotice(message); setTimeout(() => setNotice(''), 4200); };
 
   const saveClient = () => {
@@ -191,7 +215,7 @@ export default function App() {
   const deleteClient = (cid) => invoices.some(i => i.clientId === cid) ? alert('This client has invoices and cannot be deleted.') : setClients(prev => prev.filter(c => c.id !== cid));
 
   const setLine = (lineId, field, value) => setInvoiceForm(p => ({ ...p, lines: p.lines.map(l => l.id === lineId ? { ...l, [field]: value } : l) }));
-  const selectItem = (lineId, label) => { const item = ITEMS.find(i => i.label === label); setInvoiceForm(p => ({ ...p, lines: p.lines.map(l => l.id === lineId ? { ...l, itemLabel: label, rate: String(item.rate), unitType: item.unitType } : l) })); };
+  const selectItem = (lineId, value) => { const item = pricingItems.find(i => i.itemNumber === value || i.id === value || i.label === value) || pricingItems[0] || DEFAULT_PRICING_ITEMS[0]; setInvoiceForm(p => ({ ...p, lines: p.lines.map(l => l.id === lineId ? { ...l, itemCode: item.itemNumber, itemLabel: item.label, rate: String(item.rate), unitType: item.unitType } : l) })); };
 
   const syncInvoiceTransaction = (invoice, status = invoice?.status, note = '') => {
     if (!invoice?.id) return;
@@ -244,7 +268,7 @@ export default function App() {
   const saveInvoice = () => {
     const client = clients.find(c => c.id === invoiceForm.clientId && !c.archived);
     if (!client) return alert('Please select an active client.');
-    const lines = invoiceForm.lines.map(l => ({ ...l, quantity: Number(l.quantity), rate: Number(l.rate), lineTotal: Number(l.quantity) * Number(l.rate) }));
+    const lines = invoiceForm.lines.map(l => ({ ...l, itemCode: l.itemCode || '', itemLabel: l.itemLabel || '', unitType: l.unitType || 'Hour', quantity: Number(l.quantity), rate: Number(l.rate), notes: l.notes || '', lineTotal: Number(l.quantity) * Number(l.rate) }));
     if (lines.some(l => !l.quantity || l.quantity <= 0 || Number.isNaN(l.rate))) return alert('Check quantity and rate values.');
     const total = lines.reduce((s, l) => s + l.lineTotal, 0);
     const baseInvoice = {
@@ -288,7 +312,7 @@ export default function App() {
     }
     setInvoiceForm(emptyInvoice()); setEditingInvoice(null); showNotice('Invoice saved.');
   };
-  const editInvoice = (inv) => { setInvoiceForm({ clientId: inv.clientId, dueDate: inv.dueDate, notes: inv.notes || '', lines: inv.lines.map(l => ({ ...l, id: l.id || makeId('line'), quantity: String(l.quantity), rate: String(l.rate) })) }); setEditingInvoice(inv.id); setActive('Invoices'); window.scrollTo(0, 0); };
+  const editInvoice = (inv) => { setInvoiceForm({ clientId: inv.clientId, dueDate: inv.dueDate, notes: inv.notes || '', lines: inv.lines.map(l => ({ ...l, id: l.id || makeId('line'), itemCode: l.itemCode || '', notes: l.notes || '', quantity: String(l.quantity), rate: String(l.rate) })) }); setEditingInvoice(inv.id); setActive('Invoices'); window.scrollTo(0, 0); };
   const exportPDF = (inv) => {
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -385,7 +409,7 @@ export default function App() {
     const cols = { no: margin + 4, date: margin + 14, desc: margin + 42, qty: margin + 108, unit: margin + 125, rate: margin + 145, total: right - 4 };
     doc.text('#', cols.no, y + 6.5);
     doc.text('Date', cols.date, y + 6.5);
-    doc.text('Description', cols.desc, y + 6.5);
+    doc.text('Item / Description', cols.desc, y + 6.5);
     doc.text('Qty', cols.qty, y + 6.5);
     doc.text('Unit', cols.unit, y + 6.5);
     doc.text('Rate', cols.rate, y + 6.5);
@@ -401,7 +425,7 @@ export default function App() {
       }
       doc.setTextColor(51, 65, 85);
       doc.setFontSize(8.5);
-      const desc = doc.splitTextToSize(safeText(l.itemLabel), 62);
+      const desc = doc.splitTextToSize(`${safeText(l.itemCode ? l.itemCode + ' - ' : '')}${safeText(l.itemLabel)}${l.notes ? ' — ' + safeText(l.notes) : ''}`, 62);
       doc.text(String(i + 1), cols.no, y);
       doc.text(fmt(l.serviceDate), cols.date, y);
       doc.text(desc[0] || '', cols.desc, y);
@@ -496,9 +520,9 @@ export default function App() {
       {notice && <div className="notice">{notice}</div>}
       {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} setActive={setActive}/>} 
       {active === 'Clients' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
-      {active === 'Invoices' && <Invoices clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} query={query} setQuery={setQuery} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
+      {active === 'Invoices' && <Invoices pricingItems={pricingItems} clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} query={query} setQuery={setQuery} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Transactions' && <Transactions clients={clients.filter(c => !c.archived)} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
-      {active === 'Settings' && <Settings business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>} 
+      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>} 
     </main>
   </div>
   <MobileShell
@@ -507,6 +531,7 @@ export default function App() {
     displayName={displayName}
     welcomeMessage={welcomeMessage}
     business={business}
+    pricingItems={pricingItems}
     totals={totals}
     clients={clients}
     invoices={invoices}
@@ -545,12 +570,12 @@ export default function App() {
     editTxn={editTxn}
     deleteTxn={id => setTransactions(p => p.filter(t => t.id !== id))}
     cancelTxn={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}
-    settings={<Settings business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>}
+    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>}
   />
 </>;
 }
 
-function MobileShell({ active, setActive, displayName, welcomeMessage, business, totals, clients, invoices, transactions, notice, query, setQuery, user, theme, toggleTheme, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+function MobileShell({ active, setActive, displayName, welcomeMessage, business, pricingItems, totals, clients, invoices, transactions, notice, query, setQuery, user, theme, toggleTheme, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
     const activeClients = clients.filter(c => !c.archived);
   const alerts = getMobileAlerts({ clients, invoices, totals });
@@ -565,7 +590,7 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
       {notice && <div className="notice mobile-notice">{notice}</div>}
       {active === 'Dashboard' && <MobileHome welcomeMessage={welcomeMessage} totals={totals} alerts={alerts} invoices={recentInvoices} clients={activeClients} setActive={setActive} />}
       {active === 'Clients' && <MobileClients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={cancelClient} />}
-      {active === 'Invoices' && <MobileInvoices clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={cancelInvoice} query={query} setQuery={setQuery} />}
+      {active === 'Invoices' && <MobileInvoices pricingItems={pricingItems} clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={cancelInvoice} query={query} setQuery={setQuery} />}
       {active === 'Transactions' && <MobileFinance clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
       {active === 'Settings' && <div className="mobile-settings">{settings}</div>}
     </main>
@@ -631,7 +656,7 @@ function MobileClients({ clients, form, setForm, editing, save, edit, archive, d
   </section>;
 }
 
-function MobileInvoices({ clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, onStatusChange, cancel, query, setQuery }) {
+function MobileInvoices({ pricingItems = DEFAULT_PRICING_ITEMS, clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, onStatusChange, cancel, query, setQuery }) {
   const [step, setStep] = useState(1);
   const line = form.lines[0] || emptyLine();
   const preview = form.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.rate || 0), 0);
@@ -641,7 +666,7 @@ function MobileInvoices({ clients, invoices, form, setForm, editing, setLine, se
     <MobilePanel title={editing ? 'Edit invoice' : 'New invoice'} action="Client → Service → Review">
       <div className="step-dots">{[1,2,3,4].map(n => <button key={n} className={step === n ? 'active' : ''} onClick={() => setStep(n)}>{n}</button>)}</div>
       {step === 1 && <><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">Select active client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field type="date" label="Due Date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}/></>}
-      {step === 2 && <><label><span>Support Item</span><select value={line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{ITEMS.map(i => <option key={i.label}>{i.label}</option>)}</select></label><Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/><div className="mobile-two"><Field type="number" step="0.01" label="Qty" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/><Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/></div><button onClick={addLine}>+ Add another line</button>{form.lines.length > 1 && <small>{form.lines.length} service lines attached</small>}</>}
+      {step === 2 && <><label><span>Support Item</span><select value={line.itemCode || line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{pricingItems.map(i => <option key={i.id || i.itemNumber} value={i.itemNumber || i.id}>{i.itemNumber ? `${i.itemNumber} — ${i.label}` : i.label}</option>)}</select></label><Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/><div className="mobile-two"><Field type="number" step="0.01" label="Qty" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/><Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/></div><Field label="Line Notes" value={line.notes || ''} onChange={e => setLine(line.id, 'notes', e.target.value)} placeholder="Optional notes" /><button onClick={addLine}>+ Add another line</button>{form.lines.length > 1 && <small>{form.lines.length} service lines attached</small>}</>}
       {step === 3 && <><Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/>{form.lines.map((l, idx) => <div className="mobile-list-row" key={l.id}><div><b>{idx + 1}. {l.itemLabel}</b><small>{l.quantity} {l.unitType} @ {money(l.rate)}</small></div><strong>{money(Number(l.quantity || 0) * Number(l.rate || 0))}</strong></div>)}</>}
       {step === 4 && <div className="review-box"><small>Invoice total</small><b>{money(preview)}</b><p>Check the client, service dates, rates, and notes before generating.</p></div>}
       <div className="mobile-wizard-actions"><button disabled={step === 1} onClick={() => setStep(s => Math.max(1, s - 1))}>Back</button>{step < 4 ? <button className="primary" onClick={() => setStep(s => Math.min(4, s + 1))}>Next</button> : <button className="primary" onClick={() => { save(); setStep(1); }}>{editing ? 'Update invoice' : 'Generate invoice'}</button>}</div>{editing && <button onClick={cancel}>Cancel edit</button>}
@@ -768,10 +793,10 @@ function Clients({ clients, form, setForm, editing, save, edit, archive, del, ca
   return <><Card title={editing ? 'Edit NDIS Client' : 'Add NDIS Client'}><div className="grid"><Field label="Client Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><Field type="date" label="Plan Start Date" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="Plan End Date" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/><Field type="number" step="0.01" label="Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Client' : 'Save Client'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Saved Clients" action={`${active.length} active`}><ClientTable rows={active} /></Card><Card title="Archived Clients" action={`${archived.length} archived`}><ClientTable rows={archived} archivedView /></Card></>;
 }
 
-function Invoices({ clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, onStatusChange, cancel, query = '', setQuery = () => {} }) {
+function Invoices({ pricingItems = DEFAULT_PRICING_ITEMS, clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, onStatusChange, cancel, query = '', setQuery = () => {} }) {
   const filteredInvoices = invoices.filter(i => `${i.invoiceNumber} ${i.clientName} ${i.status || ''}`.toLowerCase().includes(String(query).toLowerCase()));
   const preview = form.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.rate || 0), 0);
-  return <><Card title={editing ? 'Edit Invoice' : 'Generate Invoice'}><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">Select active client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field type="date" label="Due Date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}/></div>{form.lines.map((line, idx) => <div className="line" key={line.id}><div className="line-head"><h4>Service Line {idx + 1}</h4><button className="danger" onClick={() => removeLine(line.id)}>Remove</button></div><div className="grid"><label><span>Support Item</span><select value={line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{ITEMS.map(i => <option key={i.label}>{i.label}</option>)}</select></label><Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/><Field label="Unit Type" value={line.unitType} onChange={e => setLine(line.id, 'unitType', e.target.value)}/><Field type="number" step="0.01" label="Quantity" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/><Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/></div><b className="subtotal">Subtotal {money(Number(line.quantity || 0) * Number(line.rate || 0))}</b></div>)}<button onClick={addLine}>+ Add Another Service</button><Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/><div className="total">Invoice total: {money(preview)}</div><button className="primary" onClick={save}>{editing ? 'Update Invoice' : 'Generate Invoice'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Invoice Register" action={<label className="inline-search"><input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)} /></label>}><Records rows={filteredInvoices} empty="No invoices created yet." render={i => <details className="invoice-tile" key={i.id}><summary><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong><span className="pill">{i.status || 'Generated'}</span></summary><p>Issue: {fmt(i.issueDate)} · Due: {fmt(i.dueDate)} · NDIS: {i.ndisNumber || '-'}</p>{i.lines.map((l, idx) => <p key={l.id || idx}>{idx + 1}. {l.itemLabel} · {fmt(l.serviceDate)} · {l.quantity} {l.unitType} @ {money(l.rate)} = {money(l.lineTotal)}</p>)}{i.notes && <p>Notes: {i.notes}</p>}<InvoiceStatusControls invoice={i} onChange={onStatusChange} /><div className="actions"><button onClick={() => edit(i)}>Edit</button><button onClick={() => exportPDF(i)}>Export PDF</button><button className="danger" onClick={() => del(i.id)}>Delete</button></div></details>}/></Card></>;
+  return <><Card title={editing ? 'Edit Invoice' : 'Generate Invoice'}><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">Select active client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field type="date" label="Due Date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}/></div>{form.lines.map((line, idx) => <div className="line" key={line.id}><div className="line-head"><h4>Service Line {idx + 1}</h4><button className="danger" onClick={() => removeLine(line.id)}>Remove</button></div><div className="grid"><label><span>Support Item</span><select value={line.itemCode || line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{pricingItems.map(i => <option key={i.id || i.itemNumber} value={i.itemNumber || i.id}>{i.itemNumber ? `${i.itemNumber} — ${i.label}` : i.label}</option>)}</select></label><Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/><Field label="Unit Type" value={line.unitType} onChange={e => setLine(line.id, 'unitType', e.target.value)}/><Field type="number" step="0.01" label="Quantity" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/><Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/><Field label="Line Notes" value={line.notes || ''} onChange={e => setLine(line.id, 'notes', e.target.value)} placeholder="Optional notes for this support item" /></div><b className="subtotal">Subtotal {money(Number(line.quantity || 0) * Number(line.rate || 0))}</b></div>)}<button onClick={addLine}>+ Add Another Service</button><Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/><div className="total">Invoice total: {money(preview)}</div><button className="primary" onClick={save}>{editing ? 'Update Invoice' : 'Generate Invoice'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Invoice Register" action={<label className="inline-search"><input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)} /></label>}><Records rows={filteredInvoices} empty="No invoices created yet." render={i => <details className="invoice-tile" key={i.id}><summary><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong><span className="pill">{i.status || 'Generated'}</span></summary><p>Issue: {fmt(i.issueDate)} · Due: {fmt(i.dueDate)} · NDIS: {i.ndisNumber || '-'}</p>{i.lines.map((l, idx) => <p key={l.id || idx}>{idx + 1}. {l.itemCode ? `${l.itemCode} · ` : ''}{l.itemLabel} · {fmt(l.serviceDate)} · {l.quantity} {l.unitType} @ {money(l.rate)} = {money(l.lineTotal)}</p>)}{i.notes && <p>Notes: {i.notes}</p>}<InvoiceStatusControls invoice={i} onChange={onStatusChange} /><div className="actions"><button onClick={() => edit(i)}>Edit</button><button onClick={() => exportPDF(i)}>Export PDF</button><button className="danger" onClick={() => del(i.id)}>Delete</button></div></details>}/></Card></>;
 }
 
 
@@ -819,7 +844,7 @@ function Transactions({ clients, transactions, form, setForm, editing, save, edi
   </>;
 }
 
-function Settings({ business, setBusiness, saveBusiness, clients, invoices, transactions, backup, restore, clear, sync, load, user }) {
+function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, invoices, transactions, backup, restore, clear, sync, load, user }) {
   const [draft, setDraft] = useState({ ...EMPTY_BUSINESS, ...business });
 
   useEffect(() => {
@@ -850,10 +875,60 @@ function Settings({ business, setBusiness, saveBusiness, clients, invoices, tran
       </div>
       <button className="primary" onClick={() => saveBusiness(draft)}>Save Business Profile</button>
     </Card>
-    <Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is tied to your signed-in account and includes your business profile.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON<input type="file" accept="application/json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])}/></label><button className="primary" onClick={sync}>Sync to Supabase</button><button onClick={load}>Load from Supabase</button><button className="danger" onClick={clear}>Clear All Data</button></Card>
-    <Card title="Data Summary"><div className="mini-stats"><b>Business: {business.name || 'Not set'}</b><b>Clients: {clients.length}</b><b>Invoices: {invoices.length}</b><b>Transactions: {transactions.length}</b></div></Card>
+    <NdisPricingManager
+      items={draft.pricingItems || DEFAULT_PRICING_ITEMS}
+      onChange={(nextItems) => updateDraft('pricingItems', nextItems)}
+      onSave={() => saveBusiness({ ...draft, pricingItems: draft.pricingItems || DEFAULT_PRICING_ITEMS })}
+    />
+    <Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is tied to your signed-in account and includes your business profile and NDIS pricing table.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON<input type="file" accept="application/json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])}/></label><button className="primary" onClick={sync}>Sync to Supabase</button><button onClick={load}>Load from Supabase</button><button className="danger" onClick={clear}>Clear All Data</button></Card>
+    <Card title="Data Summary"><div className="mini-stats"><b>Business: {business.name || 'Not set'}</b><b>Pricing Items: {getPricingItems(business).length}</b><b>Clients: {clients.length}</b><b>Invoices: {invoices.length}</b><b>Transactions: {transactions.length}</b></div></Card>
     <Card title="Cloud Status"><p><b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b></p><p>{isSupabaseConfigured ? `Signed in as ${user?.email || 'your account'}. Your cloud snapshot is private to this login.` : 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Cloudflare Pages variables, public/supabase-config.js, or the app setup screen.'}</p><p><small>Config source: {supabaseConfigSource}</small></p><button onClick={async () => supabase && supabase.auth.signOut()}>Sign out</button></Card>
   </>;
+}
+
+
+function NdisPricingManager({ items, onChange, onSave }) {
+  const [query, setQuery] = useState('');
+  const pricingItems = getPricingItems({ pricingItems: items });
+  const groups = [...new Set(pricingItems.map(item => item.group || 'Custom Items'))];
+  const filtered = pricingItems.filter(item => `${item.group} ${item.itemNumber} ${item.label} ${item.unitType}`.toLowerCase().includes(query.toLowerCase()));
+  const updateItem = (id, field, value) => {
+    onChange(pricingItems.map(item => item.id === id ? { ...item, [field]: field === 'rate' ? Number(value || 0) : value } : item));
+  };
+  const addItem = () => {
+    onChange([
+      ...pricingItems,
+      { id: makeId('pricing'), group: 'Custom Items', itemNumber: '', label: 'New support item', unitType: 'Hour', rate: 0, archived: false },
+    ]);
+  };
+  const restoreDefaults = () => {
+    if (confirm('Restore default NDIS pricing items? This will replace your custom pricing table.')) onChange(DEFAULT_PRICING_ITEMS);
+  };
+  return <Card title="NDIS Pricing Manager" action={`${pricingItems.filter(i => !i.archived).length} active items`}>
+    <p>Update support item numbers, descriptions, units and rates here. Invoice generation uses this table for future invoices, so annual NDIS price changes can be managed without editing code.</p>
+    <div className="settings-toolbar"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search item number, name, group or unit" /><button onClick={addItem}>+ Add Item</button><button onClick={restoreDefaults}>Restore Defaults</button><button className="primary" onClick={onSave}>Save Pricing</button></div>
+    <div className="pricing-groups">
+      {groups.map(group => {
+        const groupRows = filtered.filter(item => item.group === group);
+        if (!groupRows.length) return null;
+        return <section className="pricing-group" key={group}>
+          <div className="pricing-group-head"><h4>{group}</h4><small>{groupRows.length} item{groupRows.length === 1 ? '' : 's'}</small></div>
+          <div className="pricing-table-wrap">
+            <table className="pricing-table">
+              <thead><tr><th>Active</th><th>Item Number</th><th>Item Name and Notes</th><th>Unit</th><th>National Rate</th></tr></thead>
+              <tbody>{groupRows.map(item => <tr key={item.id} className={item.archived ? 'archived' : ''}>
+                <td><input type="checkbox" checked={!item.archived} onChange={e => updateItem(item.id, 'archived', !e.target.checked)} /></td>
+                <td><input value={item.itemNumber} onChange={e => updateItem(item.id, 'itemNumber', e.target.value)} placeholder="01_011_0107_1_1" /></td>
+                <td><input value={item.label} onChange={e => updateItem(item.id, 'label', e.target.value)} /></td>
+                <td><input value={item.unitType} onChange={e => updateItem(item.id, 'unitType', e.target.value)} placeholder="Hour" /></td>
+                <td><input type="number" step="0.01" value={item.rate} onChange={e => updateItem(item.id, 'rate', e.target.value)} /></td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+        </section>;
+      })}
+    </div>
+  </Card>;
 }
 
 function BusinessOnboarding({ business, onSave, user, onLoadCloud, cloudLoading }) {
