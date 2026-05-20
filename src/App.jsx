@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import { supabase, isSupabaseConfigured, supabaseConfigSource } from './supabaseClient';
 
@@ -20,6 +20,23 @@ const DEFAULT_PRICING_ITEMS = [
   { id: 'establishment-community', group: 'Establishment Fees', itemNumber: '04_049_0125_1_1', label: 'Establishment Fee for Personal Care/Participation', unitType: 'Each', rate: 702.30, archived: false },
   { id: 'establishment-selfcare', group: 'Establishment Fees', itemNumber: '01_049_0107_1_1', label: 'Establishment Fee for Personal Care/Participation', unitType: 'Each', rate: 702.30, archived: false },
 ];
+
+const DEFAULT_BUSINESS_COMPLIANCE = [
+  { id: 'public-liability', group: 'Insurance', label: 'Public Liability Insurance', dueDate: '', notes: '' },
+  { id: 'professional-indemnity', group: 'Insurance', label: 'Professional Indemnity Insurance', dueDate: '', notes: '' },
+  { id: 'workers-insurance', group: 'Insurance', label: 'Workers Insurance', dueDate: '', notes: '' },
+  { id: 'internal-audit', group: 'Audits', label: 'Internal Audit', dueDate: '', notes: '' },
+  { id: 'external-audit', group: 'Audits', label: 'External Audit', dueDate: '', notes: '' },
+  { id: 'ndis-audit', group: 'Audits', label: 'NDIS Audit', dueDate: '', notes: '' },
+  { id: 'worker-screening', group: 'Worker Checks', label: 'Worker Screening', dueDate: '', notes: '' },
+  { id: 'police-check', group: 'Worker Checks', label: 'Police Check', dueDate: '', notes: '' },
+  { id: 'wwcc', group: 'Worker Checks', label: 'Working With Children Check', dueDate: '', notes: '' },
+  { id: 'first-aid', group: 'Mandatory Training', label: 'First Aid', dueDate: '', notes: '' },
+  { id: 'cpr', group: 'Mandatory Training', label: 'CPR', dueDate: '', notes: '' },
+  { id: 'manual-handling', group: 'Mandatory Training', label: 'Manual Handling', dueDate: '', notes: '' },
+  { id: 'medication-training', group: 'Mandatory Training', label: 'Medication Training', dueDate: '', notes: '' },
+  { id: 'infection-control', group: 'Mandatory Training', label: 'Infection Control', dueDate: '', notes: '' },
+];
 const EMPTY_BUSINESS = {
   name: '',
   abn: '',
@@ -29,6 +46,7 @@ const EMPTY_BUSINESS = {
   paymentDetails: '',
   logoUrl: '',
   pricingItems: DEFAULT_PRICING_ITEMS,
+  businessCompliance: DEFAULT_BUSINESS_COMPLIANCE,
 };
 const getPricingItems = (business) => {
   const source = Array.isArray(business?.pricingItems) && business.pricingItems.length ? business.pricingItems : DEFAULT_PRICING_ITEMS;
@@ -43,6 +61,31 @@ const getPricingItems = (business) => {
   }));
 };
 const getActivePricingItems = (business) => getPricingItems(business).filter(item => !item.archived);
+
+const getBusinessComplianceItems = (business) => {
+  const source = Array.isArray(business?.businessCompliance) && business.businessCompliance.length ? business.businessCompliance : DEFAULT_BUSINESS_COMPLIANCE;
+  return source.map((item, idx) => ({
+    id: item.id || `business_compliance_${idx}`,
+    group: item.group || 'Business Compliance',
+    label: item.label || 'Compliance item',
+    dueDate: item.dueDate || '',
+    notes: item.notes || '',
+  }));
+};
+const getComplianceStatus = (dateStr) => {
+  const d = daysUntil(dateStr);
+  if (d === null) return { label: 'Missing', tone: 'missing', days: null, sort: 3 };
+  if (d < 0) return { label: 'Overdue', tone: 'overdue', days: d, sort: 0 };
+  if (d <= 30) return { label: 'Due soon', tone: 'due', days: d, sort: 1 };
+  return { label: 'Current', tone: 'current', days: d, sort: 2 };
+};
+const statusSummary = (dateStr) => {
+  const s = getComplianceStatus(dateStr);
+  if (s.days === null) return 'No date set';
+  if (s.days < 0) return `${Math.abs(s.days)} day${Math.abs(s.days) === 1 ? '' : 's'} overdue`;
+  return `${s.days} day${s.days === 1 ? '' : 's'} left`;
+};
+
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const addDaysISO = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
 const makeId = (p) => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -63,7 +106,7 @@ const buildWelcomeMessage = (user) => `${getTimeGreeting()}, ${getFirstName(user
 const daysUntil = (dateStr) => { if (!dateStr) return null; const end = new Date(`${dateStr}T00:00:00`); if (Number.isNaN(end.getTime())) return null; return Math.ceil((end - new Date()) / 86400000); };
 const fileToDataUrl = (file) => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
 const safeText = (value) => String(value ?? '');
-const emptyClient = { name: '', ndisNumber: '', email: '', phone: '', address: '', planStartDate: '', planEndDate: '', budget: '' };
+const emptyClient = { name: '', ndisNumber: '', email: '', phone: '', address: '', planStartDate: '', planEndDate: '', budget: '', consentExpiry: '', agreementExpiry: '', riskReviewDate: '', complianceNotes: '' };
 const emptyLine = () => { const item = DEFAULT_PRICING_ITEMS[0]; return { id: makeId('line'), itemCode: item.itemNumber, itemLabel: item.label, serviceDate: todayISO(), unitType: item.unitType, quantity: '1', rate: String(item.rate), notes: '' }; };
 const emptyInvoice = () => ({ clientId: '', dueDate: addDaysISO(7), notes: '', lines: [emptyLine()] });
 const emptyTxn = { clientId: '', type: 'expense', status: 'pending', category: '', description: '', amount: '', date: todayISO() };
@@ -118,6 +161,8 @@ export default function App() {
   const [storageLoaded, setStorageLoaded] = useState(false);
   const [cloudChecked, setCloudChecked] = useState(false);
   const [cloudLoading, setCloudLoading] = useState(false);
+  const autoSyncTimer = useRef(null);
+  const autoSyncSkip = useRef(true);
 
   useEffect(() => {
     let mounted = true;
@@ -159,6 +204,16 @@ export default function App() {
     if (!storageLoaded || !user?.id) return;
     localStorage.setItem(storageKeyFor(user), JSON.stringify({ business, clients, invoices, transactions }));
   }, [storageLoaded, user?.id, business, clients, invoices, transactions]);
+
+  useEffect(() => {
+    if (!storageLoaded || !cloudChecked || cloudLoading || !user?.id || !supabase) return;
+    if (autoSyncSkip.current) { autoSyncSkip.current = false; return; }
+    clearTimeout(autoSyncTimer.current);
+    autoSyncTimer.current = setTimeout(() => {
+      syncSnapshot({ business, clients, invoices, transactions }, user).catch(() => {});
+    }, 1200);
+    return () => clearTimeout(autoSyncTimer.current);
+  }, [storageLoaded, cloudChecked, cloudLoading, user?.id, business, clients, invoices, transactions]);
 
   const loadCloudData = async ({ silent = false } = {}) => {
     if (!user?.id) return { ok: false, message: 'Please sign in first.' };
@@ -211,7 +266,7 @@ export default function App() {
     else setClients(prev => [{ id: makeId('client'), archived: false, createdAt: new Date().toISOString(), ...clientForm }, ...prev]);
     setClientForm(emptyClient); setEditingClient(null); showNotice('Client profile saved.');
   };
-  const editClient = (c) => { setClientForm({ name: c.name || '', ndisNumber: c.ndisNumber || '', email: c.email || '', phone: c.phone || '', address: c.address || '', planStartDate: c.planStartDate || '', planEndDate: c.planEndDate || '', budget: String(c.budget ?? '') }); setEditingClient(c.id); setActive('Participants'); window.scrollTo(0, 0); };
+  const editClient = (c) => { setClientForm({ name: c.name || '', ndisNumber: c.ndisNumber || '', email: c.email || '', phone: c.phone || '', address: c.address || '', planStartDate: c.planStartDate || '', planEndDate: c.planEndDate || '', budget: String(c.budget ?? ''), consentExpiry: c.consentExpiry || '', agreementExpiry: c.agreementExpiry || '', riskReviewDate: c.riskReviewDate || '', complianceNotes: c.complianceNotes || '' }); setEditingClient(c.id); setActive('Participants'); window.scrollTo(0, 0); };
   const archiveClient = (cid) => setClients(prev => prev.map(c => c.id === cid ? { ...c, archived: !c.archived } : c));
   const deleteClient = (cid) => invoices.some(i => i.clientId === cid) ? alert('This participant has invoices and cannot be deleted.') : setClients(prev => prev.filter(c => c.id !== cid));
 
@@ -515,11 +570,11 @@ export default function App() {
     <main className="main">
       <header className="topbar"><div><h2>{welcomeMessage}</h2><p>{business.name || 'Kajola Care Operations'}</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onFocus={() => setActive('Invoices')} onKeyDown={e => { if (e.key === 'Enter') setActive('Invoices'); }} onChange={e => { setQuery(e.target.value); if (active !== 'Invoices') setActive('Invoices'); }}/><kbd>⌘K</kbd></label><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button><div className="user-badge">{userInitial}</div></div></header>
       {notice && <div className="notice">{notice}</div>}
-      {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} setActive={setActive}/>} 
+      {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} business={business} setActive={setActive}/>} 
       {active === 'Participants' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
       {active === 'Invoices' && <Invoices pricingItems={pricingItems} clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} query={query} setQuery={setQuery} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Finance' && <FinanceWorkspace clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
-      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} />}
+      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} />}
       {active === 'Reports' && <FutureWorkspace title="Reports" description="Operational and financial reporting is planned for the next Kajola Care release." />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
       {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>} 
@@ -570,6 +625,8 @@ export default function App() {
     editTxn={editTxn}
     deleteTxn={id => setTransactions(p => p.filter(t => t.id !== id))}
     cancelTxn={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}
+    setBusiness={setBusiness}
+    saveBusiness={saveBusiness}
     settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>}
   />
 </>;
@@ -583,7 +640,7 @@ function BrandMark({ compact = false }) {
   return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/icons/kajola-care-logo.png" alt="Kajola Care" /></div>;
 }
 
-function MobileShell({ active, setActive, displayName, welcomeMessage, business, pricingItems, totals, clients, invoices, transactions, notice, query, setQuery, user, theme, toggleTheme, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+function MobileShell({ active, setActive, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, notice, query, setQuery, user, theme, toggleTheme, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
     const activeClients = clients.filter(c => !c.archived);
   const alerts = getMobileAlerts({ clients, invoices, totals });
@@ -600,7 +657,7 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
       {active === 'Participants' && <MobileParticipants clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={cancelClient} />}
       {active === 'Invoices' && <MobileInvoices pricingItems={pricingItems} clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={cancelInvoice} query={query} setQuery={setQuery} />}
       {active === 'Finance' && <MobileFinance clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
-      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} />}
+      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} />}
       {active === 'Reports' && <FutureWorkspace title="Reports" description="Operational and financial reporting is planned for the next Kajola Care release." />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
       {active === 'Settings' && <div className="mobile-settings"><MobileMore setActive={setActive} />{settings}</div>}
@@ -664,7 +721,7 @@ function MobileParticipants({ clients, form, setForm, editing, save, edit, archi
   const active = clients.filter(c => !c.archived);
   return <section className="mobile-page">
     <div className="mobile-title"><h2>Participants</h2><button onClick={() => setShowForm(v => !v)}>{showForm || editing ? 'Hide form' : '+ Participant'}</button></div>
-    {(showForm || editing) && <MobilePanel title={editing ? 'Edit client' : 'New client'}><Field label="Participant Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><div className="mobile-two"><Field type="date" label="Plan Start" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="Plan End" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/></div><Field type="number" label="Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/><button className="primary" onClick={() => { save(); setShowForm(false); }}>{editing ? 'Update client' : 'Save client'}</button>{editing && <button onClick={cancel}>Cancel</button>}</MobilePanel>}
+    {(showForm || editing) && <MobilePanel title={editing ? 'Edit client' : 'New client'}><Field label="Participant Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><div className="mobile-two"><Field type="date" label="Plan Start" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="Plan End" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/></div><Field type="number" label="Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><div className="mobile-two"><Field type="date" label="Consent Expiry" value={form.consentExpiry} onChange={e => setForm(p => ({ ...p, consentExpiry: e.target.value }))}/><Field type="date" label="Agreement Expiry" value={form.agreementExpiry} onChange={e => setForm(p => ({ ...p, agreementExpiry: e.target.value }))}/></div><Field type="date" label="Risk Review" value={form.riskReviewDate} onChange={e => setForm(p => ({ ...p, riskReviewDate: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/><Field label="Compliance Notes" multiline value={form.complianceNotes} onChange={e => setForm(p => ({ ...p, complianceNotes: e.target.value }))}/><button className="primary" onClick={() => { save(); setShowForm(false); }}>{editing ? 'Update client' : 'Save client'}</button>{editing && <button onClick={cancel}>Cancel</button>}</MobilePanel>}
     <MobilePanel title="Active clients" action={`${active.length} clients`}>
       <div className="compact-client-list"><Records rows={active} empty="No active participants added yet." render={c => <div className="compact-client-row" key={c.id}><div><b>{c.name}</b><small>NDIS {c.ndisNumber || '-'} · Plan {fmt(c.planEndDate)}</small></div><div><strong>{money(c.budget)}</strong><small>{(() => { const d = daysUntil(c.planEndDate); return d === null ? 'No end date' : d < 0 ? 'Ended' : `${d} days left`; })()}</small></div><div className="compact-actions"><button onClick={() => { edit(c); setShowForm(true); }}>Edit</button><button onClick={() => archive(c.id)}>Archive</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>} /></div>
     </MobilePanel>
@@ -791,7 +848,7 @@ function CashflowOverview({ transactions }) {
   </Card>;
 }
 
-function Dashboard({ totals, invoices, transactions, clients, setActive }) {
+function Dashboard({ totals, invoices, transactions, clients, business, setActive }) {
   const activeParticipants = clients.filter(c => !c.archived);
   const clientSpend = (clientId) => invoices.filter(i => i.clientId === clientId).reduce((s, i) => s + Number(i.total || 0), 0);
   const totalBudget = activeParticipants.reduce((s, c) => s + Number(c.budget || 0), 0);
@@ -799,7 +856,7 @@ function Dashboard({ totals, invoices, transactions, clients, setActive }) {
   const budgetPct = totalBudget ? Math.min(100, Math.round((usedBudget / totalBudget) * 100)) : 0;
   const pendingInvoices = invoices.filter(i => !['Paid', 'Cancelled'].includes(normaliseInvoiceStatus(i.status)));
   const expiringParticipants = activeParticipants.filter(c => { const d = daysUntil(c.planEndDate); return d !== null && d >= 0 && d <= 30; });
-  const complianceDue = getComplianceItems({ clients, invoices, totals }).length;
+  const complianceDue = getComplianceItems({ clients, invoices, totals, business }).length;
   const topParticipants = [...activeParticipants].sort((a, b) => clientSpend(b.id) - clientSpend(a.id)).slice(0, 5);
 
   return <>
@@ -827,7 +884,7 @@ function Dashboard({ totals, invoices, transactions, clients, setActive }) {
     <div className="bottom-grid">
       <Card title="Participant Budget Leaders"><Records rows={topParticipants} empty="No participants yet." render={(c) => { const spent = clientSpend(c.id); const budget = Number(c.budget || 0); const pct = budget ? Math.min(100, Math.round((spent / budget) * 100)) : 0; return <div className="client-rank" key={c.id}><div className="mini-avatar">{(c.name||'P').split(' ').map(x=>x[0]).join('').slice(0,2)}</div><b>{c.name}</b><div className="bar"><span style={{width:`${pct || 6}%`}}/></div><strong>{money(spent)}</strong><small>{budget ? `${pct}% of ${money(budget)}` : 'No budget set'}</small></div>; }}/></Card>
       <Card title="Plan Watch"><Records rows={expiringParticipants.slice(0,4)} empty="No plans expiring soon." render={c => <div className="feed" key={c.id}><span>◷</span><div><b>{c.name}</b><small>{daysUntil(c.planEndDate)} days left · Ends {fmt(c.planEndDate)}</small></div><time>{money(Number(c.budget || 0))}</time></div>}/></Card>
-      <Card title="Compliance Due"><Records rows={getComplianceItems({ clients, invoices, totals }).slice(0,4)} empty="No compliance items due." render={item => <div className="feed" key={item.id}><span>✓</span><div><b>{item.title}</b><small>{item.detail}</small></div><time>{item.status}</time></div>}/></Card>
+      <Card title="Compliance Due"><Records rows={getComplianceItems({ clients, invoices, totals, business }).slice(0,4)} empty="No compliance items due." render={item => <div className="feed" key={item.id}><span>✓</span><div><b>{item.title}</b><small>{item.detail}</small></div><time>{item.status}</time></div>}/></Card>
     </div>
   </>;
 }
@@ -836,25 +893,67 @@ function InsightCard({ label, value, sub, progress }) {
   return <div className="insight-card"><small>{label}</small><strong>{value}</strong><span>{sub}</span>{typeof progress === 'number' && <div className="bar"><span style={{ width: `${progress}%` }} /></div>}</div>;
 }
 
-function getComplianceItems({ clients, invoices, totals }) {
+function buildParticipantComplianceRows(clients) {
+  return clients.filter(c => !c.archived).map(c => {
+    const items = [
+      { key: 'Plan Review', date: c.planEndDate, detail: 'Plan end date' },
+      { key: 'Consent', date: c.consentExpiry, detail: 'Consent expiry' },
+      { key: 'Agreement', date: c.agreementExpiry, detail: 'Service agreement expiry' },
+      { key: 'Risk Review', date: c.riskReviewDate, detail: 'Risk review date' },
+    ];
+    const statuses = items.map(item => ({ ...item, status: getComplianceStatus(item.date) }));
+    const worst = [...statuses].sort((a, b) => a.status.sort - b.status.sort)[0]?.status || getComplianceStatus('');
+    return { client: c, items: statuses, overall: worst };
+  });
+}
+
+function buildBusinessComplianceRows(business) {
+  return getBusinessComplianceItems(business).map(item => ({ ...item, status: getComplianceStatus(item.dueDate) }));
+}
+
+function getComplianceItems({ clients, invoices, business }) {
   const items = [];
-  clients.filter(c => !c.archived).forEach(c => {
-    const d = daysUntil(c.planEndDate);
-    if (d !== null && d >= 0 && d <= 30) items.push({ id: `plan-${c.id}`, title: `${c.name} plan review`, detail: `Plan ends ${fmt(c.planEndDate)}`, status: `${d}d` });
-    if (!c.ndisNumber) items.push({ id: `ndis-${c.id}`, title: `${c.name} NDIS number`, detail: 'Participant profile incomplete', status: 'Missing' });
+  buildParticipantComplianceRows(clients).forEach(row => {
+    row.items.forEach(item => {
+      if (['due', 'overdue', 'missing'].includes(item.status.tone)) {
+        items.push({
+          id: `participant-${row.client.id}-${item.key}`,
+          type: 'Participant',
+          title: `${row.client.name} ${item.key}`,
+          detail: item.date ? `${item.detail}: ${fmt(item.date)}` : `${item.detail} missing`,
+          status: item.status.label,
+          tone: item.status.tone,
+          sort: item.status.sort,
+        });
+      }
+    });
+    if (!row.client.ndisNumber) items.push({ id: `ndis-${row.client.id}`, type: 'Participant', title: `${row.client.name} NDIS number`, detail: 'Participant profile incomplete', status: 'Missing', tone: 'missing', sort: 3 });
+  });
+  buildBusinessComplianceRows(business).forEach(item => {
+    if (['due', 'overdue', 'missing'].includes(item.status.tone)) {
+      items.push({
+        id: `business-${item.id}`,
+        type: item.group,
+        title: item.label,
+        detail: item.dueDate ? `Due ${fmt(item.dueDate)}` : 'Due date missing',
+        status: item.status.label,
+        tone: item.status.tone,
+        sort: item.status.sort,
+      });
+    }
   });
   invoices.filter(i => !['Paid', 'Cancelled'].includes(normaliseInvoiceStatus(i.status))).forEach(i => {
     const d = daysUntil(i.dueDate);
-    if (d !== null && d < 0) items.push({ id: `invoice-${i.id}`, title: `Overdue invoice ${i.invoiceNumber}`, detail: i.clientName || 'Participant', status: `${Math.abs(d)}d overdue` });
+    if (d !== null && d < 0) items.push({ id: `invoice-${i.id}`, type: 'Invoice', title: `Overdue invoice ${i.invoiceNumber}`, detail: i.clientName || 'Participant', status: `${Math.abs(d)}d overdue`, tone: 'overdue', sort: 0 });
   });
-  return items;
+  return items.sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title));
 }
 
 function Clients({ clients, form, setForm, editing, save, edit, archive, del, cancel }) {
   const active = clients.filter(c => !c.archived);
   const archived = clients.filter(c => c.archived);
   const ClientTable = ({ rows, archivedView = false }) => <div className="client-table"><div className="client-table-head"><span>Participant</span><span>Plan</span><span>Budget</span><span>Contact</span><span>Actions</span></div><Records rows={rows} empty={archivedView ? 'No archived clients.' : 'No active participants added yet.'} render={c => <div className="client-table-row" key={c.id}><div><b>{c.name}</b><small>{c.address || '-'}</small></div><div><b>{c.ndisNumber || '-'}</b><small>{fmt(c.planStartDate)} → {fmt(c.planEndDate)}</small></div><div><b>{money(c.budget)}</b><small>{(() => { const d = daysUntil(c.planEndDate); return d === null ? 'No end date' : d < 0 ? 'Plan ended' : `${d} days left`; })()}</small></div><div><b>{c.email || '-'}</b><small>{c.phone || '-'}</small></div><div className="actions"><button onClick={() => edit(c)}>Edit</button><button onClick={() => archive(c.id)}>{archivedView ? 'Unarchive' : 'Archive'}</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>} /></div>;
-  return <><Card title={editing ? 'Edit Participant' : 'Add Participant'}><div className="grid"><Field label="Participant Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><Field type="date" label="Plan Start Date" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="Plan End Date" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/><Field type="number" step="0.01" label="Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Participant' : 'Save Participant'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Participants" action={`${active.length} active`}><ClientTable rows={active} /></Card><Card title="Archived Participants" action={`${archived.length} archived`}><ClientTable rows={archived} archivedView /></Card></>;
+  return <><Card title={editing ? 'Edit Participant' : 'Add Participant'}><div className="grid"><Field label="Participant Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><Field type="date" label="Plan Start Date" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="Plan End Date" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/><Field type="number" step="0.01" label="Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field type="date" label="Consent Expiry" value={form.consentExpiry} onChange={e => setForm(p => ({ ...p, consentExpiry: e.target.value }))}/><Field type="date" label="Service Agreement Expiry" value={form.agreementExpiry} onChange={e => setForm(p => ({ ...p, agreementExpiry: e.target.value }))}/><Field type="date" label="Risk Review Date" value={form.riskReviewDate} onChange={e => setForm(p => ({ ...p, riskReviewDate: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/><Field label="Compliance Notes" multiline value={form.complianceNotes} onChange={e => setForm(p => ({ ...p, complianceNotes: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Participant' : 'Save Participant'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Participants" action={`${active.length} active`}><ClientTable rows={active} /></Card><Card title="Archived Participants" action={`${archived.length} archived`}><ClientTable rows={archived} archivedView /></Card></>;
 }
 
 function Invoices({ pricingItems = DEFAULT_PRICING_ITEMS, clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, onStatusChange, cancel, query = '', setQuery = () => {} }) {
@@ -919,9 +1018,58 @@ function FinanceWorkspace({ clients, transactions, invoices = [], form, setForm,
   </>;
 }
 
-function ComplianceWorkspace({ clients, invoices, totals }) {
-  const rows = getComplianceItems({ clients, invoices, totals });
-  return <><Card title="Compliance Workspace" action={`${rows.length} due`}><p>Track participant plan reviews, missing participant details, overdue invoices, and future company compliance reminders.</p><div className="compliance-grid"><InsightCard label="Participant reviews" value={clients.filter(c => { const d = daysUntil(c.planEndDate); return d !== null && d >= 0 && d <= 30; }).length} sub="Plans ending within 30 days" /><InsightCard label="Overdue invoices" value={invoices.filter(i => { const d = daysUntil(i.dueDate); return !['Paid','Cancelled'].includes(normaliseInvoiceStatus(i.status)) && d !== null && d < 0; }).length} sub="Unpaid beyond due date" /><InsightCard label="Profile gaps" value={clients.filter(c => !c.archived && !c.ndisNumber).length} sub="Missing NDIS numbers" /></div></Card><Card title="Compliance Items"><Records rows={rows} empty="No compliance items due." render={item => <div className="compliance-row" key={item.id}><div><b>{item.title}</b><small>{item.detail}</small></div><span className="pill">{item.status}</span></div>} /></Card></>;
+function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness, saveBusiness }) {
+  const items = getComplianceItems({ clients, invoices, totals, business });
+  const participantRows = buildParticipantComplianceRows(clients);
+  const businessRows = buildBusinessComplianceRows(business);
+  const counts = {
+    current: [...participantRows.flatMap(r => r.items.map(i => i.status)), ...businessRows.map(r => r.status)].filter(s => s.tone === 'current').length,
+    due: items.filter(i => i.tone === 'due').length,
+    overdue: items.filter(i => i.tone === 'overdue').length,
+    missing: items.filter(i => i.tone === 'missing').length,
+  };
+  const updateBusinessCompliance = (id, field, value) => {
+    const current = getBusinessComplianceItems(business);
+    const nextItems = current.map(item => item.id === id ? { ...item, [field]: value } : item);
+    setBusiness(prev => ({ ...EMPTY_BUSINESS, ...prev, businessCompliance: nextItems }));
+  };
+  const saveCompliance = () => saveBusiness({ ...EMPTY_BUSINESS, ...business, businessCompliance: getBusinessComplianceItems(business) });
+  return <>
+    <Card title="Compliance Workspace" action={`${items.length} needs review`}>
+      <p>Track participant plan reviews, consent expiries, service agreements, risk reviews and business compliance obligations.</p>
+      <div className="compliance-grid">
+        <InsightCard label="Current" value={counts.current} sub="Green items" />
+        <InsightCard label="Due Soon" value={counts.due} sub="Within 30 days" />
+        <InsightCard label="Overdue" value={counts.overdue} sub="Past due" />
+        <InsightCard label="Missing" value={counts.missing} sub="No date provided" />
+      </div>
+    </Card>
+    <Card title="Participant Compliance">
+      <div className="compliance-table"><div className="compliance-table-head"><span>Participant</span><span>Plan Review</span><span>Consent</span><span>Agreement</span><span>Risk Review</span><span>Status</span></div>
+        <Records rows={participantRows} empty="No participants yet." render={row => <div className="compliance-table-row" key={row.client.id}>
+          <div><b>{row.client.name}</b><small>{row.client.ndisNumber || 'NDIS missing'}</small></div>
+          {row.items.map(item => <ComplianceDateCell key={item.key} item={item} />)}
+          <span className={`traffic-pill ${row.overall.tone}`}>{row.overall.label}</span>
+        </div>} />
+      </div>
+    </Card>
+    <Card title="Business Compliance" action={<button className="primary" onClick={saveCompliance}>Save Compliance</button>}>
+      <p>Maintain insurance, audit, worker checks and mandatory training due dates for the business.</p>
+      <div className="business-compliance-list">
+        {['Insurance','Audits','Worker Checks','Mandatory Training'].map(group => <section key={group} className="business-compliance-group"><h4>{group}</h4>{businessRows.filter(item => item.group === group).map(item => <div className="business-compliance-row" key={item.id}>
+          <label><span>Item</span><input value={item.label} onChange={e => updateBusinessCompliance(item.id, 'label', e.target.value)} /></label>
+          <label><span>Due date</span><input type="date" value={item.dueDate} onChange={e => updateBusinessCompliance(item.id, 'dueDate', e.target.value)} /></label>
+          <label><span>Notes</span><input value={item.notes || ''} onChange={e => updateBusinessCompliance(item.id, 'notes', e.target.value)} /></label>
+          <span className={`traffic-pill ${item.status.tone}`}>{item.status.label}</span>
+        </div>)}</section>)}
+      </div>
+    </Card>
+    <Card title="Compliance Items"><Records rows={items} empty="No compliance items due." render={item => <div className="compliance-row" key={item.id}><div><b>{item.title}</b><small>{item.type} · {item.detail}</small></div><span className={`traffic-pill ${item.tone}`}>{item.status}</span></div>} /></Card>
+  </>;
+}
+
+function ComplianceDateCell({ item }) {
+  return <div><b>{fmt(item.date)}</b><small>{statusSummary(item.date)}</small><span className={`traffic-dot ${item.status.tone}`} aria-label={item.status.label} /></div>;
 }
 
 function FutureWorkspace({ title, description }) {
