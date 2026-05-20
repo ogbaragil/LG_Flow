@@ -370,7 +370,7 @@ export default function App() {
     businessLines.slice(0, 4).forEach((line, idx) => doc.text(safeText(line), margin + 36, y + 10 + idx * 5));
 
     doc.setTextColor(15, 23, 42);
-    doc.setFontSize(28);
+    doc.setFontSize(24);
     doc.setFont(undefined, 'bold');
     doc.text('TAX INVOICE', right, y + 4, { align: 'right' });
     doc.setFontSize(9);
@@ -379,7 +379,6 @@ export default function App() {
     doc.text(`Invoice No: ${inv.invoiceNumber}`, right, y + 13, { align: 'right' });
     doc.text(`Issue Date: ${fmt(inv.issueDate)}`, right, y + 18, { align: 'right' });
     doc.text(`Due Date: ${fmt(inv.dueDate)}`, right, y + 23, { align: 'right' });
-    doc.text(`Status: ${inv.status || 'Generated'}`, right, y + 28, { align: 'right' });
     y += 40;
 
     // Bill/payment boxes
@@ -448,9 +447,6 @@ export default function App() {
     doc.setTextColor(71, 85, 105);
     doc.text('Subtotal', totalBoxX, y);
     doc.text(money(subtotal), right, y, { align: 'right' });
-    y += 7;
-    doc.text('GST', totalBoxX, y);
-    doc.text('Included / N/A', right, y, { align: 'right' });
     y += 8;
     doc.setFillColor(15, 23, 42);
     doc.roundedRect(totalBoxX - 4, y - 6, 74, 13, 3, 3, 'F');
@@ -517,7 +513,7 @@ export default function App() {
       <div className="profile-card"><div className="avatar">{(user.email || 'KC').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><h2>{welcomeMessage}</h2><p>{business.name || 'Kajola Care Operations'}</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onFocus={() => setActive('Invoices')} onKeyDown={e => { if (e.key === 'Enter') setActive('Invoices'); }} onChange={e => { setQuery(e.target.value); if (active !== 'Invoices') setActive('Invoices'); }}/><kbd>⌘K</kbd></label><button className="icon-btn" aria-label="Toggle theme" onClick={toggleTheme}>{theme === 'dark' ? '☀' : '◐'}</button><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button><div className="user-badge">{userInitial}</div></div></header>
+      <header className="topbar"><div><h2>{welcomeMessage}</h2><p>{business.name || 'Kajola Care Operations'}</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onFocus={() => setActive('Invoices')} onKeyDown={e => { if (e.key === 'Enter') setActive('Invoices'); }} onChange={e => { setQuery(e.target.value); if (active !== 'Invoices') setActive('Invoices'); }}/><kbd>⌘K</kbd></label><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button><div className="user-badge">{userInitial}</div></div></header>
       {notice && <div className="notice">{notice}</div>}
       {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} setActive={setActive}/>} 
       {active === 'Participants' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
@@ -596,7 +592,7 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
   return <div className="mobile-shell">
     <header className="mobile-top">
       <div className="mobile-brand"><BrandMark compact /><div><BrandWordmark compact /><small>{business.name || 'Care • Connect • Empower'}</small></div></div>
-      <div className="mobile-top-actions"><button className="mobile-theme" aria-label="Toggle theme" onClick={toggleTheme}>{theme === 'dark' ? '☀' : '◐'}</button><button className="mobile-signout" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button></div>
+      <div className="mobile-top-actions"><button className="mobile-signout" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button></div>
     </header>
     <main className="mobile-main">
       {notice && <div className="notice mobile-notice">{notice}</div>}
