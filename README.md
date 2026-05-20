@@ -1,6 +1,6 @@
-# Kajola Care Premium PWA
+# Kajola Care PWA
 
-Premium care operations PWA for clients, invoices, transactions, PDF export, offline storage and Supabase Auth cloud sync.
+Premium NDIS operations PWA for clients, invoices, transactions, PDF export, offline storage and Supabase Auth cloud sync.
 
 ## Deploy
 

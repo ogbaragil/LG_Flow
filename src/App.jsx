@@ -2,12 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import { supabase, isSupabaseConfigured, supabaseConfigSource } from './supabaseClient';
 
-const APP_NAME = 'Kajola Care';
-const APP_TAGLINE = 'Care. Connect. Empower.';
-const APP_LOGO = '/icons/kajola-mark.png';
-const APP_WORDMARK = '/icons/kajola-logo.png';
-const AppLogo = ({ className = 'app-logo', alt = APP_NAME, wordmark = false }) => <img className={className} src={wordmark ? APP_WORDMARK : APP_LOGO} alt={alt} />;
-
 const STORAGE_KEY = 'lg_flow_pwa_v2_premium';
 const TABS = ['Dashboard', 'Clients', 'Invoices', 'Transactions', 'Settings'];
 const DEFAULT_PRICING_ITEMS = [
@@ -517,7 +511,7 @@ export default function App() {
 
   return <><div className="shell desktop-shell">
     <aside className="sidebar">
-      <div className="brand"><AppLogo /><div><h1>Kajola Care</h1><p>{business.name || APP_TAGLINE}<br/>NDIS Operations</p></div></div>
+      <div className="brand"><BrandMark /><div><BrandWordmark /><p>Care • Connect • Empower</p></div></div>
       <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
       <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'All systems operational' : 'Cloud sync disabled'}</small></div>
       <div className="profile-card"><div className="avatar">{(user.email || 'KC').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
@@ -582,6 +576,14 @@ export default function App() {
 </>;
 }
 
+function BrandWordmark({ compact = false, hero = false }) {
+  return <div className={`kajola-wordmark ${compact ? 'compact' : ''} ${hero ? 'hero' : ''}`} aria-label="Kajola Care"><span className="kajola-name">Kajola</span><span className="kajola-care">Care</span></div>;
+}
+
+function BrandMark({ compact = false }) {
+  return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/icons/kajola-care-logo.png" alt="Kajola Care" /></div>;
+}
+
 function MobileShell({ active, setActive, displayName, welcomeMessage, business, pricingItems, totals, clients, invoices, transactions, notice, query, setQuery, user, theme, toggleTheme, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
     const activeClients = clients.filter(c => !c.archived);
@@ -590,7 +592,7 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
   const openAction = (tab) => { setFabOpen(false); setActive(tab); setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 20); };
   return <div className="mobile-shell">
     <header className="mobile-top">
-      <div className="mobile-brand"><AppLogo className="mobile-app-logo" /><div><b>Kajola Care</b><small>{business.name || APP_TAGLINE}</small></div></div>
+      <div className="mobile-brand"><BrandMark compact /><div><BrandWordmark compact /><small>{business.name || 'Care • Connect • Empower'}</small></div></div>
       <div className="mobile-top-actions"><button className="mobile-theme" aria-label="Toggle theme" onClick={toggleTheme}>{theme === 'dark' ? '☀' : '◐'}</button><button className="mobile-signout" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button></div>
     </header>
     <main className="mobile-main">
@@ -709,12 +711,9 @@ function filterAndSortTransactions(transactions, filters) {
 function MobileFinance({ clients, transactions, form, setForm, editing, save, edit, del, cancel }) {
   const [filters, setFilters] = useState({ type: 'all', status: 'all', clientId: 'all', sort: 'date_desc', query: '' });
   const [page, setPage] = useState(1);
-  const pageSize = 50;
   const rows = filterAndSortTransactions(transactions, filters);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const pagedRows = rows.slice((page - 1) * pageSize, page * pageSize);
-  useEffect(() => { setPage(1); }, [filters.type, filters.status, filters.clientId, filters.sort, filters.query]);
-  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const { totalPages, safePage, start, pageRows } = paginateRows(rows, page);
+  useEffect(() => { setPage(1); }, [filters.type, filters.status, filters.clientId, filters.sort, filters.query, transactions.length]);
   const income = rows.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount||0),0);
   const expenses = rows.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount||0),0);
   const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
@@ -737,7 +736,7 @@ function MobileFinance({ clients, transactions, form, setForm, editing, save, ed
         <label><span>Sort</span><select value={filters.sort} onChange={e => setFilter('sort', e.target.value)}><option value="date_desc">Newest date</option><option value="date_asc">Oldest date</option><option value="amount_desc">Highest amount</option><option value="amount_asc">Lowest amount</option></select></label>
       </div>
     </MobilePanel>
-    <MobilePanel title="Transactions" action={`${rows.length} total · Page ${page} of ${totalPages}`}><Records rows={pagedRows} empty="No matching transactions found." render={t => <div className="mobile-list-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No client'} · {t.category || 'General'} · {fmt(t.date)} · {(t.status || 'paid')}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>} />{rows.length > pageSize && <Pagination page={page} totalPages={totalPages} onPage={setPage} />}</MobilePanel>
+    <MobilePanel title="Transactions" action={`${rows.length ? start + 1 : 0}-${Math.min(start + PAGE_SIZE, rows.length)} of ${rows.length}`}><Records rows={pageRows} empty="No matching transactions found." render={t => <div className="mobile-list-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No client'} · {t.category || 'General'} · {fmt(t.date)} · {(t.status || 'paid')}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>} />{rows.length > PAGE_SIZE && <Pagination page={safePage} totalPages={totalPages} onPrev={() => setPage(p => Math.max(1, p - 1))} onNext={() => setPage(p => Math.min(totalPages, p + 1))} />}</MobilePanel>
   </section>;
 }
 
@@ -832,15 +831,20 @@ function InvoiceStatusControls({ invoice, onChange, compact = false }) {
   </div>;
 }
 
+const PAGE_SIZE = 50;
+const paginateRows = (rows, page, pageSize = PAGE_SIZE) => {
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const start = (safePage - 1) * pageSize;
+  return { totalPages, safePage, start, pageRows: rows.slice(start, start + pageSize) };
+};
+
 function Transactions({ clients, transactions, form, setForm, editing, save, edit, del, cancel }) {
   const [filters, setFilters] = useState({ type: 'all', status: 'all', clientId: 'all', sort: 'date_desc', query: '' });
   const [page, setPage] = useState(1);
-  const pageSize = 50;
   const rows = filterAndSortTransactions(transactions, filters);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const pagedRows = rows.slice((page - 1) * pageSize, page * pageSize);
-  useEffect(() => { setPage(1); }, [filters.type, filters.status, filters.clientId, filters.sort, filters.query]);
-  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const { totalPages, safePage, start, pageRows } = paginateRows(rows, page);
+  useEffect(() => { setPage(1); }, [filters.type, filters.status, filters.clientId, filters.sort, filters.query, transactions.length]);
   const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
   const income = rows.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount || 0),0);
   const expenses = rows.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount || 0),0);
@@ -849,7 +853,7 @@ function Transactions({ clients, transactions, form, setForm, editing, save, edi
       <div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div>
       <button className="primary" onClick={save}>{editing ? 'Update Transaction' : 'Save Transaction'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}
     </Card>
-    <Card title="Transaction Register" action={`${rows.length} total · Page ${page} of ${totalPages}`}>
+    <Card title="Transaction Register" action={`${rows.length ? start + 1 : 0}-${Math.min(start + PAGE_SIZE, rows.length)} of ${rows.length}`}>
       <div className="filters transaction-filters">
         <input value={filters.query} placeholder="Search description, client, category" onChange={e => setFilter('query', e.target.value)} />
         <select value={filters.type} onChange={e => setFilter('type', e.target.value)}><option value="all">All types</option><option value="income">Income</option><option value="expense">Expense</option></select>
@@ -858,13 +862,12 @@ function Transactions({ clients, transactions, form, setForm, editing, save, edi
         <select value={filters.sort} onChange={e => setFilter('sort', e.target.value)}><option value="date_desc">Newest date first</option><option value="date_asc">Oldest date first</option><option value="amount_desc">Highest amount first</option><option value="amount_asc">Lowest amount first</option></select>
       </div>
       <div className="mini-stats"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income-expenses)}</b></div>
-      <div className="txn-table"><div className="txn-table-head"><span>Transaction</span><span>Client / Category</span><span>Date</span><span>Status</span><span>Amount</span><span>Actions</span></div><Records rows={pagedRows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.invoiceNumber ? `Invoice ${t.invoiceNumber}` : t.type}</small></div><div><b>{t.clientName || 'No Client'}</b><small>{t.category || 'General'}</small></div><time>{fmt(t.date)}</time><span className="pill">{t.status}</span><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/></div>
-    </Card>
+      <div className="txn-table"><div className="txn-table-head"><span>Transaction</span><span>Client / Category</span><span>Date</span><span>Status</span><span>Amount</span><span>Actions</span></div><Records rows={pageRows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.invoiceNumber ? `Invoice ${t.invoiceNumber}` : t.type}</small></div><div><b>{t.clientName || 'No Client'}</b><small>{t.category || 'General'}</small></div><time>{fmt(t.date)}</time><span className="pill">{t.status}</span><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/></div>{rows.length > PAGE_SIZE && <Pagination page={safePage} totalPages={totalPages} onPrev={() => setPage(p => Math.max(1, p - 1))} onNext={() => setPage(p => Math.min(totalPages, p + 1))} />}</Card>
   </>;
 }
 
-function Pagination({ page, totalPages, onPage }) {
-  return <div className="pagination"><button disabled={page <= 1} onClick={() => onPage(Math.max(1, page - 1))}>Previous</button><span>Page {page} of {totalPages}</span><button disabled={page >= totalPages} onClick={() => onPage(Math.min(totalPages, page + 1))}>Next</button></div>;
+function Pagination({ page, totalPages, onPrev, onNext }) {
+  return <div className="pagination"><button onClick={onPrev} disabled={page <= 1}>Previous</button><span>Page {page} of {totalPages}</span><button onClick={onNext} disabled={page >= totalPages}>Next</button></div>;
 }
 
 function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, invoices, transactions, backup, restore, clear, sync, load, user }) {
@@ -891,9 +894,9 @@ function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, 
         <div className="logo-uploader">
           <div className="logo-preview">{draft.logoUrl ? <img src={draft.logoUrl} alt="Business logo" /> : <span>{(draft.name || 'KC').slice(0,2).toUpperCase()}</span>}</div>
           <div>
-            <b>Business Logo for Invoices</b>
-            <small>Optional. Kajola Care branding is built into the app; upload your own business logo only if you want it on exported invoices.</small>
-            <label className="file">Upload Business Logo<input type="file" accept="image/png,image/jpeg,image/jpg" onChange={async e => { const file = e.target.files?.[0]; if (file) updateDraft('logoUrl', await fileToDataUrl(file)); }}/></label>
+            <b>Business Logo</b>
+            <small>Upload a PNG or JPG. It will appear on exported invoices and is saved in your private profile.</small>
+            <label className="file">Upload Logo<input type="file" accept="image/png,image/jpeg,image/jpg" onChange={async e => { const file = e.target.files?.[0]; if (file) updateDraft('logoUrl', await fileToDataUrl(file)); }}/></label>
             {draft.logoUrl && <button type="button" onClick={() => updateDraft('logoUrl', '')}>Remove Logo</button>}
           </div>
         </div>
@@ -984,9 +987,9 @@ function BusinessOnboarding({ business, onSave, user, onLoadCloud, cloudLoading 
 
   return <div className="auth-shell">
     <section className="auth-hero">
-      <AppLogo className="auth-logo" />
+      <div className="crown">♛</div>
       <h1>Set up your business</h1>
-      <p>Kajola Care is ready. Add your business details for invoices and payment records.</p>
+      <p>Personalise Kajola Care for your invoices, payment details and workspace branding.</p>
       <div className="auth-glass"><b>{user?.email || 'Your account'}</b><span>This profile is saved in your private cloud snapshot.</span></div>
       <button className="ghost" type="button" onClick={onLoadCloud} disabled={cloudLoading}>{cloudLoading ? 'Loading cloud…' : 'Load existing cloud profile'}</button>
     </section>
@@ -996,9 +999,9 @@ function BusinessOnboarding({ business, onSave, user, onLoadCloud, cloudLoading 
       <div className="logo-uploader compact">
         <div className="logo-preview">{draft.logoUrl ? <img src={draft.logoUrl} alt="Business logo" /> : <span>{(draft.name || 'KC').slice(0,2).toUpperCase()}</span>}</div>
         <div>
-          <b>Business Logo for Invoices</b>
-          <small>Optional. Kajola Care branding is already built in; upload your business logo only for invoice exports.</small>
-          <label className="file">Upload Business Logo<input type="file" accept="image/png,image/jpeg,image/jpg" onChange={async e => { const file = e.target.files?.[0]; if (file) updateDraft('logoUrl', await fileToDataUrl(file)); }}/></label>
+          <b>Business Logo</b>
+          <small>Optional, but recommended for professional invoices.</small>
+          <label className="file">Upload Logo<input type="file" accept="image/png,image/jpeg,image/jpg" onChange={async e => { const file = e.target.files?.[0]; if (file) updateDraft('logoUrl', await fileToDataUrl(file)); }}/></label>
         </div>
       </div>
       <Field label="Business Name" value={draft.name} onChange={e => updateDraft('name', e.target.value)} placeholder="Your business name" />
@@ -1013,7 +1016,7 @@ function BusinessOnboarding({ business, onSave, user, onLoadCloud, cloudLoading 
 }
 
 function LoadingScreen({ message = 'Securing your workspace…' }) {
-  return <div className="auth-shell"><div className="auth-card"><AppLogo className="auth-logo" /><h1>Kajola Care</h1><p>{message}</p></div></div>;
+  return <div className="auth-shell"><div className="auth-card"><BrandMark /><BrandWordmark hero /><p>{message}</p></div></div>;
 }
 
 function AuthGate() {
@@ -1041,7 +1044,7 @@ function AuthGate() {
 
   if (!supabase) {
     return <div className="auth-shell">
-      <section className="auth-hero"><AppLogo className="auth-logo" /><h1>Kajola Care</h1><p>Care. Connect. Empower.</p><div className="auth-glass"><b>Supabase setup required</b><span>Paste your new Kajola Care project URL and anon public key once. The app will save it in this browser.</span></div></section>
+      <section className="auth-hero"><BrandMark /><BrandWordmark hero /><p>Care • Connect • Empower</p><div className="auth-glass"><b>Supabase setup required</b><span>Paste your new Kajola Care project URL and anon public key once. The app will save it in this browser.</span></div></section>
       <form className="auth-card" onSubmit={saveSupabaseSetup}>
         <h2>Connect Supabase</h2>
         <p>You can also set these in Cloudflare Pages or public/supabase-config.js.</p>
@@ -1068,7 +1071,7 @@ function AuthGate() {
   }
 
   return <div className="auth-shell">
-    <section className="auth-hero"><AppLogo className="auth-logo" /><h1>Kajola Care</h1><p>Care. Connect. Empower.</p><div className="auth-glass"><b>Private cloud workspace</b><span>Clients, invoices, transactions and snapshots protected by Supabase Auth.</span></div></section>
+    <section className="auth-hero"><BrandMark /><BrandWordmark hero /><p>Care • Connect • Empower</p><div className="auth-glass"><b>Private cloud workspace</b><span>Clients, invoices, transactions and snapshots protected by Supabase Auth.</span></div></section>
     <form className="auth-card" onSubmit={submit}>
       <h2>{mode === 'signup' ? 'Create your account' : 'Welcome back'}</h2>
       <p>{mode === 'signup' ? 'Start a secure Kajola Care workspace.' : 'Sign in to continue to your dashboard.'}</p>

@@ -425,51 +425,14 @@ body:before { opacity:.42; }
 :root[data-theme="light"] .gold-dot:before{background:#8a5f12}
 :root[data-theme="light"] .blue-dot:before{background:#164ee8}
 
-/* Kajola Care branding and final readability updates */
-.app-logo{width:58px;height:58px;border-radius:18px;object-fit:contain;background:rgba(255,255,255,.94);padding:6px;border:1px solid rgba(215,180,106,.35);box-shadow:0 16px 36px rgba(0,0,0,.24)}
-.mobile-app-logo{width:44px;height:44px;border-radius:14px;object-fit:contain;background:#fff;padding:4px;border:1px solid rgba(215,180,106,.35)}
-.auth-logo{width:112px;height:112px;border-radius:28px;object-fit:contain;background:rgba(255,255,255,.96);padding:10px;border:1px solid rgba(215,180,106,.28);box-shadow:0 24px 70px rgba(0,0,0,.28);margin-bottom:18px}
-.brand h1{letter-spacing:.02em;font-size:30px;color:#16b8b2}.brand p{color:#8ee5dd}.mobile-brand b{letter-spacing:.02em;color:#18c3bd}.auth-hero h1,.auth-card h1{letter-spacing:-.04em}.pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line2)}.pagination span{color:var(--muted);font-weight:800}.pagination button:disabled{opacity:.45;cursor:not-allowed;transform:none}
-:root[data-theme="light"] .chart .legend,
-:root[data-theme="light"] .legend,
-:root[data-theme="light"] .legend span{color:#0b1220;font-weight:900;text-shadow:none}
-:root[data-theme="light"] .chart .axis,
-:root[data-theme="light"] .axis span{color:#1e293b;font-weight:800;text-shadow:none}
-:root[data-theme="light"] .chart svg{background:linear-gradient(180deg,rgba(248,250,252,.84),rgba(255,255,255,.36));border-radius:16px}
-:root[data-theme="light"] .gold-dot:before{background:#9a6700}.blue-dot:before{background:var(--blue)}:root[data-theme="light"] .blue-dot:before{background:#1d4ed8}
-:root[data-theme="light"] .app-logo,:root[data-theme="light"] .mobile-app-logo,:root[data-theme="light"] .auth-logo{background:#fff;border-color:#cbd5e1;box-shadow:0 14px 30px rgba(15,23,42,.12)}
+/* Kajola Care product brand */
+.brand{gap:14px;min-width:0}.brand>div:last-child{min-width:0}.kajola-mark{width:56px;height:56px;border-radius:18px;display:grid;place-items:center;overflow:hidden;background:rgba(255,255,255,.04);border:1px solid rgba(14,177,181,.24);box-shadow:0 14px 34px rgba(0,95,160,.20)}.kajola-mark.compact{width:38px;height:38px;border-radius:12px}.kajola-mark img{width:100%;height:100%;object-fit:contain;padding:4px}.kajola-wordmark{display:flex;align-items:baseline;gap:.18em;white-space:nowrap;line-height:1;font-family:"Arial Black","Avenir Next",Inter,system-ui,sans-serif;font-weight:900;letter-spacing:-.07em;font-size:clamp(30px,2.4vw,42px);filter:drop-shadow(0 10px 26px rgba(0,0,0,.18))}.kajola-wordmark.compact{font-size:20px}.kajola-wordmark.hero{font-size:clamp(50px,8vw,88px);margin:12px 0 8px}.kajola-name{color:#073282}.kajola-care{color:#08aaa9}.sidebar .brand p{font-size:12px;text-transform:uppercase;letter-spacing:.16em;color:#66d2d2}.mobile-brand .kajola-wordmark{font-size:18px}.auth-card .kajola-mark,.auth-hero .kajola-mark{width:74px;height:74px;border-radius:24px}.auth-card h1,.auth-hero h1{display:none}.brand h1{display:none}
 
-/* Kajola Care product identity refresh */
-:root{
-  --gold:#00b8c7;
-  --gold2:#73f3e8;
-  --blue:#075bd8;
-  --green:#27d68b;
-  --violet:#21b8a6;
-  --line:rgba(0,184,199,.18);
-  --line2:rgba(125,211,252,.22);
-  --panel:rgba(7,23,35,.78);
-  --panel2:rgba(10,31,45,.90);
-}
-body{background:radial-gradient(circle at 8% 0%,rgba(0,184,199,.18),transparent 34rem),radial-gradient(circle at 90% 10%,rgba(39,214,139,.12),transparent 32rem),linear-gradient(135deg,#03111d,#071827 52%,#030b13)}
-body:before{background-image:linear-gradient(rgba(73,204,219,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(73,204,219,.035) 1px,transparent 1px)}
-.brand h1{color:#37d8d2;letter-spacing:.01em}.brand p{color:#a6f4ef}.nav-icon{color:#42d6d0}.user-badge,.avatar{border-color:#37d8d2;color:#37d8d2}.status-card{border-color:rgba(0,184,199,.25)}
-button.active,.primary{background:linear-gradient(135deg,#6ff7ed,#00b8c7 52%,#075bd8);color:#03111d;border-color:#6ff7ed;text-shadow:none}.pill{background:rgba(0,184,199,.14);border-color:rgba(0,184,199,.28);color:#a6f4ef}.text-link{color:#57e4dd}.bar span{background:linear-gradient(90deg,#00b8c7,#27d68b)}
-.app-logo,.mobile-app-logo,.auth-logo{background:rgba(255,255,255,.98);border-color:rgba(0,184,199,.32);box-shadow:0 18px 44px rgba(0,184,199,.16),0 18px 44px rgba(0,0,0,.22)}
-.app-logo{width:62px;height:62px;padding:7px}.mobile-app-logo{width:46px;height:46px}.auth-logo{width:124px;height:124px;padding:14px}
-.auth-shell{background:radial-gradient(circle at 18% 18%,rgba(0,184,199,.22),transparent 34%),radial-gradient(circle at 86% 14%,rgba(39,214,139,.18),transparent 34%),linear-gradient(135deg,#03111d 0%,#081827 58%,#03111d 100%)}
-.auth-hero p{color:#9de9e4}.auth-glass,.auth-card{border-color:rgba(0,184,199,.26)}
-.auth-card h1,.auth-hero h1{color:#f8fffe}.mobile-shell{background:radial-gradient(circle at 18% -8%,rgba(0,184,199,.20),transparent 26rem),radial-gradient(circle at 90% 8%,rgba(39,214,139,.15),transparent 24rem),linear-gradient(180deg,#03111d 0%,#071827 58%,#030b13 100%)}
-.mobile-brand b{color:#46dad4}.mobile-hero small,.mobile-panel-head small{color:#7cf5ed}.mobile-bottom button.active{color:#03111d;background:linear-gradient(135deg,#6ff7ed,#00b8c7 52%,#075bd8)}
-.pricing-group-head,.client-table-head,.txn-table-head{background:rgba(0,184,199,.10);border-color:rgba(0,184,199,.18);color:#9df4ef}.pricing-group-head h4,.pricing-table th,label span{color:#9df4ef}.line .subtotal{color:#9df4ef}.rate-lock-note{border-color:rgba(0,184,199,.24);background:rgba(0,184,199,.08);color:#9df4ef}
-.gold-dot:before{background:#00b8c7}.blue-dot:before{background:#075bd8}.stat.gold{color:#00b8c7}.stat.blue{color:#075bd8}.stat.violet{color:#21b8a6}.stat.green{color:#27d68b}
-:root[data-theme="light"]{
-  --bg:#f5fbff;--panel:rgba(255,255,255,.94);--panel2:#fff;--line:rgba(0,134,148,.18);--line2:rgba(15,76,105,.14);--gold:#00899a;--gold2:#006b78;--blue:#075bd8;--green:#047857;--violet:#008f84;--red:#dc2626;--text:#071827;--muted:#365466;--shadow:0 24px 70px rgba(15,76,105,.12)
-}
-:root[data-theme="light"] body{background:radial-gradient(circle at 5% 0%,rgba(0,184,199,.12),transparent 34rem),radial-gradient(circle at 88% 9%,rgba(39,214,139,.10),transparent 30rem),linear-gradient(135deg,#f7fcff,#eefaf9 52%,#f8fbff)}
-:root[data-theme="light"] .sidebar{background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(239,250,251,.96));border-right-color:rgba(0,134,148,.18)}
-:root[data-theme="light"] .brand h1,:root[data-theme="light"] .nav-icon{color:#00899a}:root[data-theme="light"] .brand p{color:#075985}:root[data-theme="light"] label span,:root[data-theme="light"] .pricing-table th,:root[data-theme="light"] .client-table-head,:root[data-theme="light"] .txn-table-head,:root[data-theme="light"] .pricing-group-head h4{color:#006b78}
-:root[data-theme="light"] button.active,:root[data-theme="light"] .primary,:root[data-theme="light"] .mobile-bottom button.active{background:linear-gradient(135deg,#81f7ef,#00b8c7 55%,#075bd8);color:#03111d;border-color:#00a6b8}
-:root[data-theme="light"] .client-table-head,:root[data-theme="light"] .txn-table-head,:root[data-theme="light"] .pricing-group-head,:root[data-theme="light"] .pricing-table th{background:#dff9f8;border-color:#a7eeea}
-:root[data-theme="light"] .pill{background:#def7f6;border-color:#99f0ea;color:#005c67}:root[data-theme="light"] .rate-lock-note{background:#e6fffb;border-color:#a7eeea;color:#005c67}
-:root[data-theme="light"] .chart .legend,:root[data-theme="light"] .legend,:root[data-theme="light"] .legend span{color:#071827;font-weight:900}:root[data-theme="light"] .chart .axis,:root[data-theme="light"] .axis span{color:#1e3a4a;font-weight:800}
+/* Cashflow readability */
+.legend{color:var(--text);font-weight:800}.chart .legend span{color:var(--text)}:root[data-theme="light"] .legend,:root[data-theme="light"] .chart .legend span{color:#0b1220}:root[data-theme="light"] .axis{color:#1e293b}:root[data-theme="light"] .chart svg{filter:none}
+
+/* Transaction pagination */
+.pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line2)}.pagination span{font-weight:900;color:var(--muted)}.pagination button:disabled{opacity:.45;cursor:not-allowed;transform:none}.mobile-panel .pagination{justify-content:space-between}.mobile-panel .pagination button{width:auto;flex:1}
+
+@media(max-width:1180px){.kajola-wordmark{font-size:30px}.sidebar .brand p{display:none}}
+@media(max-width:720px){.kajola-mark{width:44px;height:44px}.kajola-wordmark{font-size:24px}.mobile-brand .kajola-wordmark{font-size:18px}.kajola-wordmark.hero{font-size:44px}.auth-card .kajola-mark,.auth-hero .kajola-mark{width:60px;height:60px}.pagination{justify-content:stretch}.pagination button{flex:1}}
