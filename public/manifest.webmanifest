@@ -4,8 +4,8 @@
   "description": "Care operations workspace for NDIS clients, invoices, transactions and cloud sync.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#05070b",
-  "theme_color": "#08aaa9",
+  "background_color": "#f4f7fb",
+  "theme_color": "#07348B",
   "orientation": "portrait",
   "icons": [
     {
