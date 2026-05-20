@@ -112,7 +112,7 @@ export default function App() {
   const [editingTxn, setEditingTxn] = useState(null);
   const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
-  const [theme, setTheme] = useState(() => localStorage.getItem('lg_flow_theme') || 'dark');
+  const [theme, setTheme] = useState(() => localStorage.getItem('lg_flow_theme') || 'light');
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [storageLoaded, setStorageLoaded] = useState(false);
