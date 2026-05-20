@@ -424,3 +424,17 @@ body:before { opacity:.42; }
 :root[data-theme="light"] .negative{color:#b91c1c}
 :root[data-theme="light"] .gold-dot:before{background:#8a5f12}
 :root[data-theme="light"] .blue-dot:before{background:#164ee8}
+
+/* Kajola Care branding and final readability updates */
+.app-logo{width:58px;height:58px;border-radius:18px;object-fit:contain;background:rgba(255,255,255,.94);padding:6px;border:1px solid rgba(215,180,106,.35);box-shadow:0 16px 36px rgba(0,0,0,.24)}
+.mobile-app-logo{width:44px;height:44px;border-radius:14px;object-fit:contain;background:#fff;padding:4px;border:1px solid rgba(215,180,106,.35)}
+.auth-logo{width:112px;height:112px;border-radius:28px;object-fit:contain;background:rgba(255,255,255,.96);padding:10px;border:1px solid rgba(215,180,106,.28);box-shadow:0 24px 70px rgba(0,0,0,.28);margin-bottom:18px}
+.brand h1{letter-spacing:.02em;font-size:30px;color:#16b8b2}.brand p{color:#8ee5dd}.mobile-brand b{letter-spacing:.02em;color:#18c3bd}.auth-hero h1,.auth-card h1{letter-spacing:-.04em}.pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line2)}.pagination span{color:var(--muted);font-weight:800}.pagination button:disabled{opacity:.45;cursor:not-allowed;transform:none}
+:root[data-theme="light"] .chart .legend,
+:root[data-theme="light"] .legend,
+:root[data-theme="light"] .legend span{color:#0b1220;font-weight:900;text-shadow:none}
+:root[data-theme="light"] .chart .axis,
+:root[data-theme="light"] .axis span{color:#1e293b;font-weight:800;text-shadow:none}
+:root[data-theme="light"] .chart svg{background:linear-gradient(180deg,rgba(248,250,252,.84),rgba(255,255,255,.36));border-radius:16px}
+:root[data-theme="light"] .gold-dot:before{background:#9a6700}.blue-dot:before{background:var(--blue)}:root[data-theme="light"] .blue-dot:before{background:#1d4ed8}
+:root[data-theme="light"] .app-logo,:root[data-theme="light"] .mobile-app-logo,:root[data-theme="light"] .auth-logo{background:#fff;border-color:#cbd5e1;box-shadow:0 14px 30px rgba(15,23,42,.12)}

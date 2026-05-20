@@ -1,7 +1,7 @@
 create extension if not exists "pgcrypto";
 
--- LG Flow production schema for a dedicated Supabase project.
--- Run this once in Supabase SQL Editor for a new LG Flow project.
+-- Kajola Care production schema for a dedicated Supabase project.
+-- Run this once in Supabase SQL Editor for a new Kajola Care project.
 
 create table if not exists public.clients (
   id uuid primary key default gen_random_uuid(),

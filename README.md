@@ -1,4 +1,4 @@
-# LG Flow Premium PWA
+# Kajola Care Premium PWA
 
 Premium NDIS operations PWA for clients, invoices, transactions, PDF export, offline storage and Supabase Auth cloud sync.
 
@@ -21,7 +21,7 @@ You can also set runtime config in `public/supabase-config.js` or in the in-app 
 
 ## Supabase
 
-Run `supabase/schema.sql` in your LG Flow Supabase project.
+Run `supabase/schema.sql` in your Kajola Care Supabase project.
 
 ## New in this build
 
