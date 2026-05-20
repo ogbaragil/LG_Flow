@@ -438,3 +438,38 @@ body:before { opacity:.42; }
 :root[data-theme="light"] .chart svg{background:linear-gradient(180deg,rgba(248,250,252,.84),rgba(255,255,255,.36));border-radius:16px}
 :root[data-theme="light"] .gold-dot:before{background:#9a6700}.blue-dot:before{background:var(--blue)}:root[data-theme="light"] .blue-dot:before{background:#1d4ed8}
 :root[data-theme="light"] .app-logo,:root[data-theme="light"] .mobile-app-logo,:root[data-theme="light"] .auth-logo{background:#fff;border-color:#cbd5e1;box-shadow:0 14px 30px rgba(15,23,42,.12)}
+
+/* Kajola Care product identity refresh */
+:root{
+  --gold:#00b8c7;
+  --gold2:#73f3e8;
+  --blue:#075bd8;
+  --green:#27d68b;
+  --violet:#21b8a6;
+  --line:rgba(0,184,199,.18);
+  --line2:rgba(125,211,252,.22);
+  --panel:rgba(7,23,35,.78);
+  --panel2:rgba(10,31,45,.90);
+}
+body{background:radial-gradient(circle at 8% 0%,rgba(0,184,199,.18),transparent 34rem),radial-gradient(circle at 90% 10%,rgba(39,214,139,.12),transparent 32rem),linear-gradient(135deg,#03111d,#071827 52%,#030b13)}
+body:before{background-image:linear-gradient(rgba(73,204,219,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(73,204,219,.035) 1px,transparent 1px)}
+.brand h1{color:#37d8d2;letter-spacing:.01em}.brand p{color:#a6f4ef}.nav-icon{color:#42d6d0}.user-badge,.avatar{border-color:#37d8d2;color:#37d8d2}.status-card{border-color:rgba(0,184,199,.25)}
+button.active,.primary{background:linear-gradient(135deg,#6ff7ed,#00b8c7 52%,#075bd8);color:#03111d;border-color:#6ff7ed;text-shadow:none}.pill{background:rgba(0,184,199,.14);border-color:rgba(0,184,199,.28);color:#a6f4ef}.text-link{color:#57e4dd}.bar span{background:linear-gradient(90deg,#00b8c7,#27d68b)}
+.app-logo,.mobile-app-logo,.auth-logo{background:rgba(255,255,255,.98);border-color:rgba(0,184,199,.32);box-shadow:0 18px 44px rgba(0,184,199,.16),0 18px 44px rgba(0,0,0,.22)}
+.app-logo{width:62px;height:62px;padding:7px}.mobile-app-logo{width:46px;height:46px}.auth-logo{width:124px;height:124px;padding:14px}
+.auth-shell{background:radial-gradient(circle at 18% 18%,rgba(0,184,199,.22),transparent 34%),radial-gradient(circle at 86% 14%,rgba(39,214,139,.18),transparent 34%),linear-gradient(135deg,#03111d 0%,#081827 58%,#03111d 100%)}
+.auth-hero p{color:#9de9e4}.auth-glass,.auth-card{border-color:rgba(0,184,199,.26)}
+.auth-card h1,.auth-hero h1{color:#f8fffe}.mobile-shell{background:radial-gradient(circle at 18% -8%,rgba(0,184,199,.20),transparent 26rem),radial-gradient(circle at 90% 8%,rgba(39,214,139,.15),transparent 24rem),linear-gradient(180deg,#03111d 0%,#071827 58%,#030b13 100%)}
+.mobile-brand b{color:#46dad4}.mobile-hero small,.mobile-panel-head small{color:#7cf5ed}.mobile-bottom button.active{color:#03111d;background:linear-gradient(135deg,#6ff7ed,#00b8c7 52%,#075bd8)}
+.pricing-group-head,.client-table-head,.txn-table-head{background:rgba(0,184,199,.10);border-color:rgba(0,184,199,.18);color:#9df4ef}.pricing-group-head h4,.pricing-table th,label span{color:#9df4ef}.line .subtotal{color:#9df4ef}.rate-lock-note{border-color:rgba(0,184,199,.24);background:rgba(0,184,199,.08);color:#9df4ef}
+.gold-dot:before{background:#00b8c7}.blue-dot:before{background:#075bd8}.stat.gold{color:#00b8c7}.stat.blue{color:#075bd8}.stat.violet{color:#21b8a6}.stat.green{color:#27d68b}
+:root[data-theme="light"]{
+  --bg:#f5fbff;--panel:rgba(255,255,255,.94);--panel2:#fff;--line:rgba(0,134,148,.18);--line2:rgba(15,76,105,.14);--gold:#00899a;--gold2:#006b78;--blue:#075bd8;--green:#047857;--violet:#008f84;--red:#dc2626;--text:#071827;--muted:#365466;--shadow:0 24px 70px rgba(15,76,105,.12)
+}
+:root[data-theme="light"] body{background:radial-gradient(circle at 5% 0%,rgba(0,184,199,.12),transparent 34rem),radial-gradient(circle at 88% 9%,rgba(39,214,139,.10),transparent 30rem),linear-gradient(135deg,#f7fcff,#eefaf9 52%,#f8fbff)}
+:root[data-theme="light"] .sidebar{background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(239,250,251,.96));border-right-color:rgba(0,134,148,.18)}
+:root[data-theme="light"] .brand h1,:root[data-theme="light"] .nav-icon{color:#00899a}:root[data-theme="light"] .brand p{color:#075985}:root[data-theme="light"] label span,:root[data-theme="light"] .pricing-table th,:root[data-theme="light"] .client-table-head,:root[data-theme="light"] .txn-table-head,:root[data-theme="light"] .pricing-group-head h4{color:#006b78}
+:root[data-theme="light"] button.active,:root[data-theme="light"] .primary,:root[data-theme="light"] .mobile-bottom button.active{background:linear-gradient(135deg,#81f7ef,#00b8c7 55%,#075bd8);color:#03111d;border-color:#00a6b8}
+:root[data-theme="light"] .client-table-head,:root[data-theme="light"] .txn-table-head,:root[data-theme="light"] .pricing-group-head,:root[data-theme="light"] .pricing-table th{background:#dff9f8;border-color:#a7eeea}
+:root[data-theme="light"] .pill{background:#def7f6;border-color:#99f0ea;color:#005c67}:root[data-theme="light"] .rate-lock-note{background:#e6fffb;border-color:#a7eeea;color:#005c67}
+:root[data-theme="light"] .chart .legend,:root[data-theme="light"] .legend,:root[data-theme="light"] .legend span{color:#071827;font-weight:900}:root[data-theme="light"] .chart .axis,:root[data-theme="light"] .axis span{color:#1e3a4a;font-weight:800}

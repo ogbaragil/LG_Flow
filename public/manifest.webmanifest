@@ -1,18 +1,14 @@
 {
   "name": "Kajola Care",
   "short_name": "Kajola Care",
-  "description": "Premium NDIS operations suite for clients, invoices, transactions and cloud sync.",
+  "description": "Premium care operations suite for clients, invoices, transactions and cloud sync.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#05070b",
-  "theme_color": "#05070b",
+  "background_color": "#061724",
+  "theme_color": "#00a6b8",
   "orientation": "portrait",
   "icons": [
-    {
-      "src": "/icons/kajola-logo.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }

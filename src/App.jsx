@@ -4,8 +4,9 @@ import { supabase, isSupabaseConfigured, supabaseConfigSource } from './supabase
 
 const APP_NAME = 'Kajola Care';
 const APP_TAGLINE = 'Care. Connect. Empower.';
-const APP_LOGO = '/icons/kajola-logo.png';
-const AppLogo = ({ className = 'app-logo', alt = APP_NAME }) => <img className={className} src={APP_LOGO} alt={alt} />;
+const APP_LOGO = '/icons/kajola-mark.png';
+const APP_WORDMARK = '/icons/kajola-logo.png';
+const AppLogo = ({ className = 'app-logo', alt = APP_NAME, wordmark = false }) => <img className={className} src={wordmark ? APP_WORDMARK : APP_LOGO} alt={alt} />;
 
 const STORAGE_KEY = 'lg_flow_pwa_v2_premium';
 const TABS = ['Dashboard', 'Clients', 'Invoices', 'Transactions', 'Settings'];
@@ -354,14 +355,14 @@ export default function App() {
         doc.roundedRect(margin, y - 2, 28, 22, 3, 3, 'F');
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(12);
-        doc.text((business.name || 'LG').slice(0, 2).toUpperCase(), margin + 14, y + 11, { align: 'center' });
+        doc.text((business.name || 'KC').slice(0, 2).toUpperCase(), margin + 14, y + 11, { align: 'center' });
       }
     } else {
       doc.setFillColor(15, 23, 42);
       doc.roundedRect(margin, y - 2, 28, 22, 3, 3, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(12);
-      doc.text((business.name || 'LG').slice(0, 2).toUpperCase(), margin + 14, y + 11, { align: 'center' });
+      doc.text((business.name || 'KC').slice(0, 2).toUpperCase(), margin + 14, y + 11, { align: 'center' });
     }
 
     doc.setTextColor(15, 23, 42);
@@ -519,7 +520,7 @@ export default function App() {
       <div className="brand"><AppLogo /><div><h1>Kajola Care</h1><p>{business.name || APP_TAGLINE}<br/>NDIS Operations</p></div></div>
       <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
       <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'All systems operational' : 'Cloud sync disabled'}</small></div>
-      <div className="profile-card"><div className="avatar">{(user.email || 'LG').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
+      <div className="profile-card"><div className="avatar">{(user.email || 'KC').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
     <main className="main">
       <header className="topbar"><div><h2>{welcomeMessage}</h2><p>Here’s what’s happening with your business today.</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onFocus={() => setActive('Invoices')} onKeyDown={e => { if (e.key === 'Enter') setActive('Invoices'); }} onChange={e => { setQuery(e.target.value); if (active !== 'Invoices') setActive('Invoices'); }}/><kbd>⌘K</kbd></label><button className="icon-btn" aria-label="Toggle theme" onClick={toggleTheme}>{theme === 'dark' ? '☀' : '◐'}</button><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button><div className="user-badge">{userInitial}</div></div></header>
@@ -879,7 +880,7 @@ function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, 
   return <>
     <Card title="Business Profile" action={<button type="button" className="text-link" onClick={() => setBusinessOpen(open => !open)}>{businessOpen ? 'Collapse' : 'Edit Profile'}</button>}>
       <div className="settings-summary">
-        <div className="logo-preview compact">{draft.logoUrl ? <img src={draft.logoUrl} alt="Business logo" /> : <span>{(draft.name || 'LG').slice(0,2).toUpperCase()}</span>}</div>
+        <div className="logo-preview compact">{draft.logoUrl ? <img src={draft.logoUrl} alt="Business logo" /> : <span>{(draft.name || 'KC').slice(0,2).toUpperCase()}</span>}</div>
         <div>
           <b>{draft.name || 'Business profile not completed'}</b>
           <small>{[draft.abn, draft.email, draft.phone].filter(Boolean).join(' · ') || 'Details shown on invoices. Open only when you need to update them.'}</small>
@@ -888,11 +889,11 @@ function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, 
       {businessOpen && <>
         <p>This information is private to the signed-in workspace and appears on exported invoices.</p>
         <div className="logo-uploader">
-          <div className="logo-preview">{draft.logoUrl ? <img src={draft.logoUrl} alt="Business logo" /> : <span>{(draft.name || 'LG').slice(0,2).toUpperCase()}</span>}</div>
+          <div className="logo-preview">{draft.logoUrl ? <img src={draft.logoUrl} alt="Business logo" /> : <span>{(draft.name || 'KC').slice(0,2).toUpperCase()}</span>}</div>
           <div>
-            <b>Business Logo</b>
-            <small>Upload a PNG or JPG. It will appear on exported invoices and is saved in your private profile.</small>
-            <label className="file">Upload Logo<input type="file" accept="image/png,image/jpeg,image/jpg" onChange={async e => { const file = e.target.files?.[0]; if (file) updateDraft('logoUrl', await fileToDataUrl(file)); }}/></label>
+            <b>Business Logo for Invoices</b>
+            <small>Optional. Kajola Care branding is built into the app; upload your own business logo only if you want it on exported invoices.</small>
+            <label className="file">Upload Business Logo<input type="file" accept="image/png,image/jpeg,image/jpg" onChange={async e => { const file = e.target.files?.[0]; if (file) updateDraft('logoUrl', await fileToDataUrl(file)); }}/></label>
             {draft.logoUrl && <button type="button" onClick={() => updateDraft('logoUrl', '')}>Remove Logo</button>}
           </div>
         </div>
@@ -985,7 +986,7 @@ function BusinessOnboarding({ business, onSave, user, onLoadCloud, cloudLoading 
     <section className="auth-hero">
       <AppLogo className="auth-logo" />
       <h1>Set up your business</h1>
-      <p>Personalise Kajola Care for your invoices, payment details and workspace branding.</p>
+      <p>Kajola Care is ready. Add your business details for invoices and payment records.</p>
       <div className="auth-glass"><b>{user?.email || 'Your account'}</b><span>This profile is saved in your private cloud snapshot.</span></div>
       <button className="ghost" type="button" onClick={onLoadCloud} disabled={cloudLoading}>{cloudLoading ? 'Loading cloud…' : 'Load existing cloud profile'}</button>
     </section>
@@ -993,11 +994,11 @@ function BusinessOnboarding({ business, onSave, user, onLoadCloud, cloudLoading 
       <h2>Business onboarding</h2>
       <p>Enter the details you want shown on invoices. You can edit these later in Settings.</p>
       <div className="logo-uploader compact">
-        <div className="logo-preview">{draft.logoUrl ? <img src={draft.logoUrl} alt="Business logo" /> : <span>{(draft.name || 'LG').slice(0,2).toUpperCase()}</span>}</div>
+        <div className="logo-preview">{draft.logoUrl ? <img src={draft.logoUrl} alt="Business logo" /> : <span>{(draft.name || 'KC').slice(0,2).toUpperCase()}</span>}</div>
         <div>
-          <b>Business Logo</b>
-          <small>Optional, but recommended for professional invoices.</small>
-          <label className="file">Upload Logo<input type="file" accept="image/png,image/jpeg,image/jpg" onChange={async e => { const file = e.target.files?.[0]; if (file) updateDraft('logoUrl', await fileToDataUrl(file)); }}/></label>
+          <b>Business Logo for Invoices</b>
+          <small>Optional. Kajola Care branding is already built in; upload your business logo only for invoice exports.</small>
+          <label className="file">Upload Business Logo<input type="file" accept="image/png,image/jpeg,image/jpg" onChange={async e => { const file = e.target.files?.[0]; if (file) updateDraft('logoUrl', await fileToDataUrl(file)); }}/></label>
         </div>
       </div>
       <Field label="Business Name" value={draft.name} onChange={e => updateDraft('name', e.target.value)} placeholder="Your business name" />
