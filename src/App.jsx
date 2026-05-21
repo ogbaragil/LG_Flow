@@ -28,14 +28,6 @@ const DEFAULT_BUSINESS_COMPLIANCE = [
   { id: 'internal-audit', group: 'Audits', label: 'Internal Audit', dueDate: '', notes: '' },
   { id: 'external-audit', group: 'Audits', label: 'External Audit', dueDate: '', notes: '' },
   { id: 'ndis-audit', group: 'Audits', label: 'NDIS Audit', dueDate: '', notes: '' },
-  { id: 'worker-screening', group: 'Worker Checks', label: 'Worker Screening', dueDate: '', notes: '' },
-  { id: 'police-check', group: 'Worker Checks', label: 'Police Check', dueDate: '', notes: '' },
-  { id: 'wwcc', group: 'Worker Checks', label: 'Working With Children Check', dueDate: '', notes: '' },
-  { id: 'first-aid', group: 'Mandatory Training', label: 'First Aid', dueDate: '', notes: '' },
-  { id: 'cpr', group: 'Mandatory Training', label: 'CPR', dueDate: '', notes: '' },
-  { id: 'manual-handling', group: 'Mandatory Training', label: 'Manual Handling', dueDate: '', notes: '' },
-  { id: 'medication-training', group: 'Mandatory Training', label: 'Medication Training', dueDate: '', notes: '' },
-  { id: 'infection-control', group: 'Mandatory Training', label: 'Infection Control', dueDate: '', notes: '' },
 ];
 const EMPTY_BUSINESS = {
   name: '',
@@ -62,15 +54,19 @@ const getPricingItems = (business) => {
 };
 const getActivePricingItems = (business) => getPricingItems(business).filter(item => !item.archived);
 
+const BUSINESS_COMPLIANCE_GROUPS = ['Insurance', 'Audits'];
 const getBusinessComplianceItems = (business) => {
   const source = Array.isArray(business?.businessCompliance) && business.businessCompliance.length ? business.businessCompliance : DEFAULT_BUSINESS_COMPLIANCE;
-  return source.map((item, idx) => ({
-    id: item.id || `business_compliance_${idx}`,
-    group: item.group || 'Business Compliance',
-    label: item.label || 'Compliance item',
-    dueDate: item.dueDate || '',
-    notes: item.notes || '',
-  }));
+  const cleaned = source
+    .map((item, idx) => ({
+      id: item.id || `business_compliance_${idx}`,
+      group: item.group || 'Business Compliance',
+      label: item.label || 'Compliance item',
+      dueDate: item.dueDate || '',
+      notes: item.notes || '',
+    }))
+    .filter(item => BUSINESS_COMPLIANCE_GROUPS.includes(item.group));
+  return cleaned.length ? cleaned : DEFAULT_BUSINESS_COMPLIANCE;
 };
 const getComplianceStatus = (dateStr) => {
   const d = daysUntil(dateStr);
@@ -1116,13 +1112,13 @@ function ParticipantCompliance({ rows }) {
 
 function BusinessCompliance({ businessRows, updateBusinessCompliance, saveCompliance }) {
   return <Card title="Business Compliance" action={<button className="primary" onClick={saveCompliance}>Save Compliance</button>}>
-    <p>Maintain insurance, audits, worker checks and mandatory business training due dates.</p>
+    <p>Maintain company-level insurance and audit due dates. Worker checks and training are managed under Employees Compliance.</p>
     <div className="business-compliance-list">
-      {['Insurance','Audits','Worker Checks','Mandatory Training'].map(group => <section key={group} className="business-compliance-group"><h4>{group}</h4>{businessRows.filter(item => item.group === group).map(item => <div className="business-compliance-row" key={item.id}>
+      {BUSINESS_COMPLIANCE_GROUPS.map(group => <section key={group} className="business-compliance-group"><div className="compliance-section-title"><h4>{group}</h4><small>{businessRows.filter(item => item.group === group).length} items</small></div>{businessRows.filter(item => item.group === group).map(item => <div className="business-compliance-row" key={item.id}>
         <label><span>Item</span><input value={item.label} onChange={e => updateBusinessCompliance(item.id, 'label', e.target.value)} /></label>
         <label><span>Due date</span><input type="date" value={item.dueDate} onChange={e => updateBusinessCompliance(item.id, 'dueDate', e.target.value)} /></label>
         <label><span>Notes</span><input value={item.notes || ''} onChange={e => updateBusinessCompliance(item.id, 'notes', e.target.value)} /></label>
-        <span className={`traffic-pill ${item.status.tone}`}>{item.status.label}</span>
+        <div><span className={`traffic-pill ${item.status.tone}`}>{item.status.label}</span><small>{statusSummary(item.dueDate)}</small></div>
       </div>)}</section>)}
     </div>
   </Card>;
