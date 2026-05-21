@@ -110,7 +110,23 @@ const emptyClient = { name: '', ndisNumber: '', email: '', phone: '', address: '
 const emptyLine = () => { const item = DEFAULT_PRICING_ITEMS[0]; return { id: makeId('line'), itemCode: item.itemNumber, itemLabel: item.label, serviceDate: todayISO(), unitType: item.unitType, quantity: '1', rate: String(item.rate), notes: '' }; };
 const emptyInvoice = () => ({ clientId: '', dueDate: addDaysISO(7), notes: '', lines: [emptyLine()] });
 const emptyTxn = { clientId: '', type: 'expense', status: 'pending', category: '', description: '', amount: '', date: todayISO() };
-const emptyWorker = { name: '', role: '', email: '', phone: '', workerCheckExpiry: '', mandatoryTrainingExpiry: '', firstAidExpiry: '', cprExpiry: '', notes: '', archived: false };
+const WORKER_COMPLIANCE_ITEMS = [
+  { key: 'currentPassportExpiry', label: 'Current Passport', group: 'Identity & Right to Work' },
+  { key: 'driversLicenceExpiry', label: 'Aus Drivers Licence', group: 'Identity & Right to Work' },
+  { key: 'visaExpiry', label: 'VISA', group: 'Identity & Right to Work' },
+  { key: 'wwccExpiry', label: 'Working with Children Check', group: 'Worker Checks' },
+  { key: 'carInsuranceExpiry', label: 'Car Insurance', group: 'Worker Checks' },
+  { key: 'ndisWorkerScreeningExpiry', label: 'NDIS Workers Screening Check', group: 'Worker Checks' },
+  { key: 'cprExpiry', label: 'CPR', group: 'Training' },
+  { key: 'firstAidExpiry', label: 'FIRST AID', group: 'Training' },
+  { key: 'infectionControlExpiry', label: 'Infection Prev and control', group: 'Training' },
+  { key: 'complaintFeedbackExpiry', label: 'Complaint and Feedback Management', group: 'Training' },
+  { key: 'incidentManagementExpiry', label: 'Incident Management', group: 'Training' },
+  { key: 'emergencyDisasterExpiry', label: 'Emergency and Disaster Management', group: 'Training' },
+  { key: 'ahpraRegistrationExpiry', label: 'AHPRA Registration', group: 'Professional Registration' },
+  { key: 'ndisOrientationExpiry', label: 'NDIS Worker Orientation Program', group: 'Training' },
+];
+const emptyWorker = { name: '', role: '', email: '', phone: '', notes: '', archived: false, ...Object.fromEntries(WORKER_COMPLIANCE_ITEMS.map(item => [item.key, ''])) };
 const INVOICE_STATUSES = ['Draft', 'Pending', 'Paid', 'Cancelled'];
 const normaliseInvoiceStatus = (status) => {
   const value = String(status || '').toLowerCase();
@@ -551,7 +567,7 @@ export default function App() {
     else setWorkers(prev => [{ id: makeId('worker'), createdAt: new Date().toISOString(), ...data }, ...prev]);
     setWorkerForm(emptyWorker); setEditingWorker(null); showNotice('Worker compliance profile saved.');
   };
-  const editWorker = (worker) => { setWorkerForm({ name: worker.name || '', role: worker.role || '', email: worker.email || '', phone: worker.phone || '', workerCheckExpiry: worker.workerCheckExpiry || '', mandatoryTrainingExpiry: worker.mandatoryTrainingExpiry || '', firstAidExpiry: worker.firstAidExpiry || '', cprExpiry: worker.cprExpiry || '', notes: worker.notes || '', archived: Boolean(worker.archived) }); setEditingWorker(worker.id); setActive('Compliance'); window.scrollTo(0, 0); };
+  const editWorker = (worker) => { setWorkerForm({ ...emptyWorker, ...worker, archived: Boolean(worker.archived) }); setEditingWorker(worker.id); setActive('Compliance'); window.scrollTo(0, 0); };
   const deleteWorker = (id) => setWorkers(prev => prev.filter(w => w.id !== id));
   const archiveWorker = (id) => setWorkers(prev => prev.map(w => w.id === id ? { ...w, archived: !w.archived } : w));
   const cancelWorker = () => { setEditingWorker(null); setWorkerForm(emptyWorker); };
@@ -938,16 +954,12 @@ function buildBusinessComplianceRows(business) {
 }
 
 function buildEmployeeComplianceRows(workers = []) {
-  return workers.filter(w => !w.archived).map(worker => {
-    const items = [
-      { key: 'workerCheck', label: 'Worker Check', date: worker.workerCheckExpiry },
-      { key: 'mandatoryTraining', label: 'Mandatory Training', date: worker.mandatoryTrainingExpiry },
-      { key: 'firstAid', label: 'First Aid', date: worker.firstAidExpiry },
-      { key: 'cpr', label: 'CPR', date: worker.cprExpiry },
-    ];
+  return workers.filter(worker => !worker.archived).map(worker => {
+    const items = WORKER_COMPLIANCE_ITEMS.map(item => ({ ...item, date: worker[item.key] }));
     const statuses = items.map(item => ({ ...item, status: getComplianceStatus(item.date) }));
     const worst = [...statuses].sort((a, b) => a.status.sort - b.status.sort)[0]?.status || getComplianceStatus('');
-    return { worker, items: statuses, overall: worst };
+    const dueCount = statuses.filter(item => ['due','overdue','missing'].includes(item.status.tone)).length;
+    return { worker, items: statuses, overall: worst, dueCount };
   });
 }
 
@@ -1054,6 +1066,7 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
 function EmployeeCompliance({ workers, rows, form, setForm, editing, save, edit, archive, del, cancel }) {
   const active = workers.filter(w => !w.archived);
   const archived = workers.filter(w => w.archived);
+  const groups = [...new Set(WORKER_COMPLIANCE_ITEMS.map(item => item.group))];
   return <>
     <Card title={editing ? 'Edit Worker' : 'Add Worker'} action={`${active.length} active workers`}>
       <div className="grid">
@@ -1061,22 +1074,28 @@ function EmployeeCompliance({ workers, rows, form, setForm, editing, save, edit,
         <Field label="Role" value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}/>
         <Field label="Email" type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/>
         <Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/>
-        <Field type="date" label="Worker Check Expiry" value={form.workerCheckExpiry} onChange={e => setForm(p => ({ ...p, workerCheckExpiry: e.target.value }))}/>
-        <Field type="date" label="Mandatory Training Expiry" value={form.mandatoryTrainingExpiry} onChange={e => setForm(p => ({ ...p, mandatoryTrainingExpiry: e.target.value }))}/>
-        <Field type="date" label="First Aid Expiry" value={form.firstAidExpiry} onChange={e => setForm(p => ({ ...p, firstAidExpiry: e.target.value }))}/>
-        <Field type="date" label="CPR Expiry" value={form.cprExpiry} onChange={e => setForm(p => ({ ...p, cprExpiry: e.target.value }))}/>
-        <Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/>
       </div>
+      <div className="worker-compliance-editor">
+        {groups.map(group => <section key={group} className="worker-compliance-group"><h4>{group}</h4><div className="grid">
+          {WORKER_COMPLIANCE_ITEMS.filter(item => item.group === group).map(item => <Field key={item.key} type="date" label={item.label} value={form[item.key] || ''} onChange={e => setForm(p => ({ ...p, [item.key]: e.target.value }))}/>) }
+        </div></section>)}
+      </div>
+      <Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/>
       <button className="primary" onClick={save}>{editing ? 'Update Worker' : 'Save Worker'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}
     </Card>
     <Card title="Employees Compliance" action={`${rows.length} workers`}>
-      <div className="compliance-table employee-compliance-table"><div className="compliance-table-head"><span>Worker</span><span>Worker Check</span><span>Mandatory Training</span><span>First Aid</span><span>CPR</span><span>Status</span><span>Actions</span></div>
-        <Records rows={rows} empty="No workers added yet." render={row => <div className="compliance-table-row" key={row.worker.id}>
-          <div><b>{row.worker.name}</b><small>{[row.worker.role, row.worker.email].filter(Boolean).join(' · ') || 'Worker profile'}</small></div>
-          {row.items.map(item => <ComplianceDateCell key={item.key} item={item} />)}
-          <span className={`traffic-pill ${row.overall.tone}`}>{row.overall.label}</span>
-          <div className="actions"><button onClick={() => edit(row.worker)}>Edit</button><button onClick={() => archive(row.worker.id)}>{row.worker.archived ? 'Unarchive' : 'Archive'}</button><button className="danger" onClick={() => del(row.worker.id)}>Delete</button></div>
-        </div>} />
+      <div className="compliance-table employee-compliance-table compact"><div className="compliance-table-head"><span>Worker</span><span>Checks needing review</span><span>Next due item</span><span>Status</span><span>Actions</span></div>
+        <Records rows={rows} empty="No workers added yet." render={row => {
+          const attention = row.items.filter(item => ['due','overdue','missing'].includes(item.status.tone));
+          const nextDue = row.items.filter(item => item.date).sort((a,b) => new Date(a.date) - new Date(b.date))[0];
+          return <div className="compliance-table-row" key={row.worker.id}>
+            <div><b>{row.worker.name}</b><small>{[row.worker.role, row.worker.email].filter(Boolean).join(' · ') || 'Worker profile'}</small></div>
+            <div className="compliance-mini-list">{attention.slice(0,4).map(item => <span key={item.key} className={`traffic-pill ${item.status.tone}`}>{item.label}</span>)}{attention.length > 4 && <small>+{attention.length - 4} more</small>}{!attention.length && <span className="traffic-pill current">All current</span>}</div>
+            <div><b>{nextDue ? fmt(nextDue.date) : '-'}</b><small>{nextDue?.label || 'No dates set'}</small></div>
+            <span className={`traffic-pill ${row.overall.tone}`}>{row.overall.label}</span>
+            <div className="actions"><button onClick={() => edit(row.worker)}>Edit</button><button onClick={() => archive(row.worker.id)}>{row.worker.archived ? 'Unarchive' : 'Archive'}</button><button className="danger" onClick={() => del(row.worker.id)}>Delete</button></div>
+          </div>
+        }} />
       </div>
     </Card>
     {archived.length > 0 && <Card title="Archived Workers" action={`${archived.length} archived`}><Records rows={archived} render={w => <div className="compliance-row" key={w.id}><div><b>{w.name}</b><small>{w.role || 'Archived worker'}</small></div><button onClick={() => archive(w.id)}>Unarchive</button></div>} /></Card>}
