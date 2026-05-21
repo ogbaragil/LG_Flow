@@ -28,14 +28,23 @@ const DEFAULT_BUSINESS_COMPLIANCE = [
   { id: 'internal-audit', group: 'Audits', label: 'Internal Audit', dueDate: '', notes: '' },
   { id: 'external-audit', group: 'Audits', label: 'External Audit', dueDate: '', notes: '' },
   { id: 'ndis-audit', group: 'Audits', label: 'NDIS Audit', dueDate: '', notes: '' },
-  { id: 'worker-screening', group: 'Worker Checks', label: 'Worker Screening', dueDate: '', notes: '' },
-  { id: 'police-check', group: 'Worker Checks', label: 'Police Check', dueDate: '', notes: '' },
-  { id: 'wwcc', group: 'Worker Checks', label: 'Working With Children Check', dueDate: '', notes: '' },
-  { id: 'first-aid', group: 'Mandatory Training', label: 'First Aid', dueDate: '', notes: '' },
-  { id: 'cpr', group: 'Mandatory Training', label: 'CPR', dueDate: '', notes: '' },
-  { id: 'manual-handling', group: 'Mandatory Training', label: 'Manual Handling', dueDate: '', notes: '' },
-  { id: 'medication-training', group: 'Mandatory Training', label: 'Medication Training', dueDate: '', notes: '' },
-  { id: 'infection-control', group: 'Mandatory Training', label: 'Infection Control', dueDate: '', notes: '' },
+];
+
+const DEFAULT_WORKER_COMPLIANCE_ITEMS = [
+  { key: 'passportExpiry', label: 'Current Passport' },
+  { key: 'driversLicenceExpiry', label: 'Aus Drivers Licence' },
+  { key: 'visaExpiry', label: 'VISA' },
+  { key: 'wwccExpiry', label: 'Working with Children Check' },
+  { key: 'carInsuranceExpiry', label: 'Car Insurance' },
+  { key: 'ndisWorkerScreeningExpiry', label: 'NDIS Worker Screening Check' },
+  { key: 'cprExpiry', label: 'CPR' },
+  { key: 'firstAidExpiry', label: 'FIRST AID' },
+  { key: 'infectionPreventionExpiry', label: 'Infection Prev and control' },
+  { key: 'complaintFeedbackExpiry', label: 'Complaint and Feedback Management' },
+  { key: 'incidentManagementExpiry', label: 'Incident Management' },
+  { key: 'emergencyDisasterExpiry', label: 'Emergency and Disaster Management' },
+  { key: 'ahpraRegistrationExpiry', label: 'AHPRA Registration' },
+  { key: 'ndisOrientationExpiry', label: 'NDIS Worker Orientation Program' },
 ];
 const EMPTY_BUSINESS = {
   name: '',
@@ -110,6 +119,7 @@ const emptyClient = { name: '', ndisNumber: '', email: '', phone: '', address: '
 const emptyLine = () => { const item = DEFAULT_PRICING_ITEMS[0]; return { id: makeId('line'), itemCode: item.itemNumber, itemLabel: item.label, serviceDate: todayISO(), unitType: item.unitType, quantity: '1', rate: String(item.rate), notes: '' }; };
 const emptyInvoice = () => ({ clientId: '', dueDate: addDaysISO(7), notes: '', lines: [emptyLine()] });
 const emptyTxn = { clientId: '', type: 'expense', status: 'pending', category: '', description: '', amount: '', date: todayISO() };
+const emptyWorker = () => Object.fromEntries([['id', makeId('worker')], ['name', ''], ['role', ''], ['email', ''], ['phone', ''], ['notes', ''], ...DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => [item.key, ''])]);
 const INVOICE_STATUSES = ['Draft', 'Pending', 'Paid', 'Cancelled'];
 const normaliseInvoiceStatus = (status) => {
   const value = String(status || '').toLowerCase();
@@ -146,6 +156,7 @@ export default function App() {
   const [clients, setClients] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [workers, setWorkers] = useState([]);
   const [business, setBusiness] = useState(EMPTY_BUSINESS);
   const [clientForm, setClientForm] = useState(emptyClient);
   const [invoiceForm, setInvoiceForm] = useState(emptyInvoice());
@@ -184,6 +195,7 @@ export default function App() {
     setClients(d?.clients || []);
     setInvoices(d?.invoices || []);
     setTransactions(d?.transactions || []);
+    setWorkers(d?.workers || []);
   };
 
   useEffect(() => {
@@ -202,18 +214,18 @@ export default function App() {
 
   useEffect(() => {
     if (!storageLoaded || !user?.id) return;
-    localStorage.setItem(storageKeyFor(user), JSON.stringify({ business, clients, invoices, transactions }));
-  }, [storageLoaded, user?.id, business, clients, invoices, transactions]);
+    localStorage.setItem(storageKeyFor(user), JSON.stringify({ business, clients, invoices, transactions, workers }));
+  }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers]);
 
   useEffect(() => {
     if (!storageLoaded || !cloudChecked || cloudLoading || !user?.id || !supabase) return;
     if (autoSyncSkip.current) { autoSyncSkip.current = false; return; }
     clearTimeout(autoSyncTimer.current);
     autoSyncTimer.current = setTimeout(() => {
-      syncSnapshot({ business, clients, invoices, transactions }, user).catch(() => {});
+      syncSnapshot({ business, clients, invoices, transactions, workers }, user).catch(() => {});
     }, 1200);
     return () => clearTimeout(autoSyncTimer.current);
-  }, [storageLoaded, cloudChecked, cloudLoading, user?.id, business, clients, invoices, transactions]);
+  }, [storageLoaded, cloudChecked, cloudLoading, user?.id, business, clients, invoices, transactions, workers]);
 
   const loadCloudData = async ({ silent = false } = {}) => {
     if (!user?.id) return { ok: false, message: 'Please sign in first.' };
@@ -256,7 +268,7 @@ export default function App() {
   }, [clients, invoices, transactions]);
 
   const filteredInvoices = invoices.filter(i => `${i.invoiceNumber} ${i.clientName}`.toLowerCase().includes(query.toLowerCase())).slice(0, 6);
-  const payload = { business, clients, invoices, transactions };
+  const payload = { business, clients, invoices, transactions, workers };
   const pricingItems = useMemo(() => getActivePricingItems(business), [business]);
   const showNotice = (message) => { setNotice(message); setTimeout(() => setNotice(''), 4200); };
 
@@ -547,7 +559,7 @@ export default function App() {
   const userInitial = (displayName || user?.email || 'U').slice(0, 1).toUpperCase();
 
   const backup = () => { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), data: payload }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'kajola-care-backup.json'; a.click(); };
-  const restore = async (file) => { try { const parsed = JSON.parse(await file.text()); const d = parsed.data || parsed; setBusiness({ ...EMPTY_BUSINESS, ...(d.business || {}) }); setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); showNotice('Backup restored.'); } catch { alert('Invalid backup JSON.'); } };
+  const restore = async (file) => { try { const parsed = JSON.parse(await file.text()); const d = parsed.data || parsed; setBusiness({ ...EMPTY_BUSINESS, ...(d.business || {}) }); setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); setWorkers(d.workers || []); showNotice('Backup restored.'); } catch { alert('Invalid backup JSON.'); } };
 
   const saveBusiness = (nextBusiness) => {
     if (!nextBusiness.name.trim()) return alert('Please enter your business name.');
@@ -574,10 +586,10 @@ export default function App() {
       {active === 'Participants' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
       {active === 'Invoices' && <Invoices pricingItems={pricingItems} clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} query={query} setQuery={setQuery} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Finance' && <FinanceWorkspace clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
-      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} />}
+      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} />}
       {active === 'Reports' && <FutureWorkspace title="Reports" description="Operational and financial reporting is planned for the next Kajola Care release." />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
-      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>} 
+      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>} 
     </main>
   </div>
   <MobileShell
@@ -591,6 +603,8 @@ export default function App() {
     clients={clients}
     invoices={invoices}
     transactions={transactions}
+    workers={workers}
+    setWorkers={setWorkers}
     notice={notice}
     query={query}
     setQuery={setQuery}
@@ -627,7 +641,7 @@ export default function App() {
     cancelTxn={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}
     setBusiness={setBusiness}
     saveBusiness={saveBusiness}
-    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>}
+    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>}
   />
 </>;
 }
@@ -640,7 +654,7 @@ function BrandMark({ compact = false }) {
   return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/icons/kajola-care-logo.png" alt="Kajola Care" /></div>;
 }
 
-function MobileShell({ active, setActive, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, notice, query, setQuery, user, theme, toggleTheme, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+function MobileShell({ active, setActive, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, notice, query, setQuery, user, theme, toggleTheme, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
     const activeClients = clients.filter(c => !c.archived);
   const alerts = getMobileAlerts({ clients, invoices, totals });
@@ -657,7 +671,7 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
       {active === 'Participants' && <MobileParticipants clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={cancelClient} />}
       {active === 'Invoices' && <MobileInvoices pricingItems={pricingItems} clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={cancelInvoice} query={query} setQuery={setQuery} />}
       {active === 'Finance' && <MobileFinance clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
-      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} />}
+      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} />}
       {active === 'Reports' && <FutureWorkspace title="Reports" description="Operational and financial reporting is planned for the next Kajola Care release." />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
       {active === 'Settings' && <div className="mobile-settings"><MobileMore setActive={setActive} />{settings}</div>}
@@ -911,7 +925,19 @@ function buildBusinessComplianceRows(business) {
   return getBusinessComplianceItems(business).map(item => ({ ...item, status: getComplianceStatus(item.dueDate) }));
 }
 
-function getComplianceItems({ clients, invoices, business }) {
+function buildWorkerComplianceRows(workers = []) {
+  return workers.map(worker => {
+    const items = DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => ({
+      ...item,
+      date: worker[item.key] || '',
+      status: getComplianceStatus(worker[item.key] || ''),
+    }));
+    const worst = [...items].sort((a, b) => a.status.sort - b.status.sort)[0]?.status || getComplianceStatus('');
+    return { worker, items, overall: worst };
+  });
+}
+
+function getComplianceItems({ clients, invoices, business, workers = [] }) {
   const items = [];
   buildParticipantComplianceRows(clients).forEach(row => {
     row.items.forEach(item => {
@@ -928,6 +954,21 @@ function getComplianceItems({ clients, invoices, business }) {
       }
     });
     if (!row.client.ndisNumber) items.push({ id: `ndis-${row.client.id}`, type: 'Participant', title: `${row.client.name} NDIS number`, detail: 'Participant profile incomplete', status: 'Missing', tone: 'missing', sort: 3 });
+  });
+  buildWorkerComplianceRows(workers).forEach(row => {
+    row.items.forEach(item => {
+      if (['due', 'overdue', 'missing'].includes(item.status.tone)) {
+        items.push({
+          id: `worker-${row.worker.id}-${item.key}`,
+          type: 'Employee',
+          title: `${row.worker.name || 'Worker'} ${item.label}`,
+          detail: item.date ? `Due ${fmt(item.date)}` : 'Due date missing',
+          status: item.status.label,
+          tone: item.status.tone,
+          sort: item.status.sort,
+        });
+      }
+    });
   });
   buildBusinessComplianceRows(business).forEach(item => {
     if (['due', 'overdue', 'missing'].includes(item.status.tone)) {
@@ -1018,12 +1059,21 @@ function FinanceWorkspace({ clients, transactions, invoices = [], form, setForm,
   </>;
 }
 
-function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness, saveBusiness }) {
-  const items = getComplianceItems({ clients, invoices, totals, business });
+function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness, saveBusiness, workers = [], setWorkers = () => {} }) {
+  const [section, setSection] = useState('Employees');
+  const [workerDraft, setWorkerDraft] = useState(emptyWorker());
+  const [editingWorkerId, setEditingWorkerId] = useState(null);
+  const items = getComplianceItems({ clients, invoices, totals, business, workers });
   const participantRows = buildParticipantComplianceRows(clients);
   const businessRows = buildBusinessComplianceRows(business);
+  const workerRows = buildWorkerComplianceRows(workers);
+  const allStatuses = [
+    ...participantRows.flatMap(r => r.items.map(i => i.status)),
+    ...businessRows.map(r => r.status),
+    ...workerRows.flatMap(r => r.items.map(i => i.status)),
+  ];
   const counts = {
-    current: [...participantRows.flatMap(r => r.items.map(i => i.status)), ...businessRows.map(r => r.status)].filter(s => s.tone === 'current').length,
+    current: allStatuses.filter(s => s.tone === 'current').length,
     due: items.filter(i => i.tone === 'due').length,
     overdue: items.filter(i => i.tone === 'overdue').length,
     missing: items.filter(i => i.tone === 'missing').length,
@@ -1034,17 +1084,70 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
     setBusiness(prev => ({ ...EMPTY_BUSINESS, ...prev, businessCompliance: nextItems }));
   };
   const saveCompliance = () => saveBusiness({ ...EMPTY_BUSINESS, ...business, businessCompliance: getBusinessComplianceItems(business) });
+  const saveWorker = () => {
+    if (!workerDraft.name.trim()) return alert('Please enter the worker name.');
+    if (editingWorkerId) setWorkers(prev => prev.map(w => w.id === editingWorkerId ? { ...workerDraft, id: editingWorkerId, updatedAt: new Date().toISOString() } : w));
+    else setWorkers(prev => [{ ...workerDraft, id: workerDraft.id || makeId('worker'), createdAt: new Date().toISOString() }, ...prev]);
+    setWorkerDraft(emptyWorker());
+    setEditingWorkerId(null);
+  };
+  const editWorker = (worker) => {
+    setWorkerDraft({ ...emptyWorker(), ...worker });
+    setEditingWorkerId(worker.id);
+    setSection('Employees');
+    window.scrollTo(0, 0);
+  };
+  const deleteWorker = (id) => {
+    if (confirm('Delete this worker profile?')) setWorkers(prev => prev.filter(w => w.id !== id));
+    if (editingWorkerId === id) { setWorkerDraft(emptyWorker()); setEditingWorkerId(null); }
+  };
+  const updateWorkerDraft = (field, value) => setWorkerDraft(prev => ({ ...prev, [field]: value }));
+  const complianceTabs = ['Employees', 'Participants', 'Business', 'Items'];
   return <>
     <Card title="Compliance Workspace" action={`${items.length} needs review`}>
-      <p>Track participant plan reviews, consent expiries, service agreements, risk reviews and business compliance obligations.</p>
+      <p>Track employee requirements, participant plan compliance, business insurance and audit obligations.</p>
       <div className="compliance-grid">
         <InsightCard label="Current" value={counts.current} sub="Green items" />
         <InsightCard label="Due Soon" value={counts.due} sub="Within 30 days" />
         <InsightCard label="Overdue" value={counts.overdue} sub="Past due" />
         <InsightCard label="Missing" value={counts.missing} sub="No date provided" />
       </div>
+      <div className="subnav compliance-subnav">{complianceTabs.map(tab => <button key={tab} className={section === tab ? 'active' : ''} onClick={() => setSection(tab)}>{tab}</button>)}</div>
     </Card>
-    <Card title="Participant Compliance">
+
+    {section === 'Employees' && <>
+      <Card title={editingWorkerId ? 'Edit Worker' : 'Add Worker'} action={`${workers.length} workers`}>
+        <div className="grid">
+          <Field label="Worker Name" value={workerDraft.name} onChange={e => updateWorkerDraft('name', e.target.value)} />
+          <Field label="Role" value={workerDraft.role} onChange={e => updateWorkerDraft('role', e.target.value)} />
+          <Field label="Email" type="email" value={workerDraft.email} onChange={e => updateWorkerDraft('email', e.target.value)} />
+          <Field label="Phone" value={workerDraft.phone} onChange={e => updateWorkerDraft('phone', e.target.value)} />
+        </div>
+        <h4 className="section-label">Worker compliance dates</h4>
+        <div className="grid">
+          {DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => <Field key={item.key} type="date" label={item.label} value={workerDraft[item.key] || ''} onChange={e => updateWorkerDraft(item.key, e.target.value)} />)}
+          <Field label="Notes" multiline value={workerDraft.notes || ''} onChange={e => updateWorkerDraft('notes', e.target.value)} />
+        </div>
+        <button className="primary" onClick={saveWorker}>{editingWorkerId ? 'Update Worker' : 'Save Worker'}</button>
+        {editingWorkerId && <button onClick={() => { setWorkerDraft(emptyWorker()); setEditingWorkerId(null); }}>Cancel Edit</button>}
+      </Card>
+      <Card title="Employees Compliance Register">
+        <div className="client-table compliance-register"><div className="client-table-head"><span>Worker</span><span>Role</span><span>Critical Status</span><span>Due / Missing Items</span><span>Actions</span></div>
+          <Records rows={workerRows} empty="No workers added yet." render={row => {
+            const reviewItems = row.items.filter(item => ['due','overdue','missing'].includes(item.status.tone));
+            return <div className="client-table-row" key={row.worker.id}>
+              <div><b>{row.worker.name}</b><small>{row.worker.email || row.worker.phone || 'No contact details'}</small></div>
+              <div><b>{row.worker.role || '-'}</b><small>{row.worker.notes || 'No notes'}</small></div>
+              <div><span className={`traffic-pill ${row.overall.tone}`}>{row.overall.label}</span><small>{statusSummary(row.items.find(i => i.status.sort === row.overall.sort)?.date || '')}</small></div>
+              <div><small>{reviewItems.length ? reviewItems.slice(0, 3).map(i => i.label).join(', ') : 'All current'}</small></div>
+              <div className="actions"><button onClick={() => editWorker(row.worker)}>Edit</button><button className="danger" onClick={() => deleteWorker(row.worker.id)}>Delete</button></div>
+            </div>;
+          }} />
+        </div>
+      </Card>
+    </>}
+
+    {section === 'Participants' && <Card title="Participant Compliance">
       <div className="compliance-table"><div className="compliance-table-head"><span>Participant</span><span>Plan Review</span><span>Consent</span><span>Agreement</span><span>Risk Review</span><span>Status</span></div>
         <Records rows={participantRows} empty="No participants yet." render={row => <div className="compliance-table-row" key={row.client.id}>
           <div><b>{row.client.name}</b><small>{row.client.ndisNumber || 'NDIS missing'}</small></div>
@@ -1052,19 +1155,21 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
           <span className={`traffic-pill ${row.overall.tone}`}>{row.overall.label}</span>
         </div>} />
       </div>
-    </Card>
-    <Card title="Business Compliance" action={<button className="primary" onClick={saveCompliance}>Save Compliance</button>}>
-      <p>Maintain insurance, audit, worker checks and mandatory training due dates for the business.</p>
+    </Card>}
+
+    {section === 'Business' && <Card title="Business Compliance" action={<button className="primary" onClick={saveCompliance}>Save Compliance</button>}>
+      <p>Maintain insurance and audit due dates for the business. Worker checks and mandatory training are managed under Employees Compliance.</p>
       <div className="business-compliance-list">
-        {['Insurance','Audits','Worker Checks','Mandatory Training'].map(group => <section key={group} className="business-compliance-group"><h4>{group}</h4>{businessRows.filter(item => item.group === group).map(item => <div className="business-compliance-row" key={item.id}>
+        {['Insurance','Audits'].map(group => <section key={group} className="business-compliance-group"><h4>{group}</h4>{businessRows.filter(item => item.group === group).map(item => <div className="business-compliance-row" key={item.id}>
           <label><span>Item</span><input value={item.label} onChange={e => updateBusinessCompliance(item.id, 'label', e.target.value)} /></label>
           <label><span>Due date</span><input type="date" value={item.dueDate} onChange={e => updateBusinessCompliance(item.id, 'dueDate', e.target.value)} /></label>
           <label><span>Notes</span><input value={item.notes || ''} onChange={e => updateBusinessCompliance(item.id, 'notes', e.target.value)} /></label>
           <span className={`traffic-pill ${item.status.tone}`}>{item.status.label}</span>
         </div>)}</section>)}
       </div>
-    </Card>
-    <Card title="Compliance Items"><Records rows={items} empty="No compliance items due." render={item => <div className="compliance-row" key={item.id}><div><b>{item.title}</b><small>{item.type} · {item.detail}</small></div><span className={`traffic-pill ${item.tone}`}>{item.status}</span></div>} /></Card>
+    </Card>}
+
+    {section === 'Items' && <Card title="Compliance Items"><Records rows={items} empty="No compliance items due." render={item => <div className="compliance-row" key={item.id}><div><b>{item.title}</b><small>{item.type} · {item.detail}</small></div><span className={`traffic-pill ${item.tone}`}>{item.status}</span></div>} /></Card>}
   </>;
 }
 
