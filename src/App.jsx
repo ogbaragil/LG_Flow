@@ -28,6 +28,14 @@ const DEFAULT_BUSINESS_COMPLIANCE = [
   { id: 'internal-audit', group: 'Audits', label: 'Internal Audit', dueDate: '', notes: '' },
   { id: 'external-audit', group: 'Audits', label: 'External Audit', dueDate: '', notes: '' },
   { id: 'ndis-audit', group: 'Audits', label: 'NDIS Audit', dueDate: '', notes: '' },
+  { id: 'worker-screening', group: 'Worker Checks', label: 'Worker Screening', dueDate: '', notes: '' },
+  { id: 'police-check', group: 'Worker Checks', label: 'Police Check', dueDate: '', notes: '' },
+  { id: 'wwcc', group: 'Worker Checks', label: 'Working With Children Check', dueDate: '', notes: '' },
+  { id: 'first-aid', group: 'Mandatory Training', label: 'First Aid', dueDate: '', notes: '' },
+  { id: 'cpr', group: 'Mandatory Training', label: 'CPR', dueDate: '', notes: '' },
+  { id: 'manual-handling', group: 'Mandatory Training', label: 'Manual Handling', dueDate: '', notes: '' },
+  { id: 'medication-training', group: 'Mandatory Training', label: 'Medication Training', dueDate: '', notes: '' },
+  { id: 'infection-control', group: 'Mandatory Training', label: 'Infection Control', dueDate: '', notes: '' },
 ];
 const EMPTY_BUSINESS = {
   name: '',
@@ -54,19 +62,15 @@ const getPricingItems = (business) => {
 };
 const getActivePricingItems = (business) => getPricingItems(business).filter(item => !item.archived);
 
-const BUSINESS_COMPLIANCE_GROUPS = ['Insurance', 'Audits'];
 const getBusinessComplianceItems = (business) => {
   const source = Array.isArray(business?.businessCompliance) && business.businessCompliance.length ? business.businessCompliance : DEFAULT_BUSINESS_COMPLIANCE;
-  const cleaned = source
-    .map((item, idx) => ({
-      id: item.id || `business_compliance_${idx}`,
-      group: item.group || 'Business Compliance',
-      label: item.label || 'Compliance item',
-      dueDate: item.dueDate || '',
-      notes: item.notes || '',
-    }))
-    .filter(item => BUSINESS_COMPLIANCE_GROUPS.includes(item.group));
-  return cleaned.length ? cleaned : DEFAULT_BUSINESS_COMPLIANCE;
+  return source.map((item, idx) => ({
+    id: item.id || `business_compliance_${idx}`,
+    group: item.group || 'Business Compliance',
+    label: item.label || 'Compliance item',
+    dueDate: item.dueDate || '',
+    notes: item.notes || '',
+  }));
 };
 const getComplianceStatus = (dateStr) => {
   const d = daysUntil(dateStr);
@@ -1011,113 +1015,7 @@ function getComplianceItems({ clients, invoices, business, workers = [] }) {
 function Clients({ clients, form, setForm, editing, save, edit, archive, del, cancel }) {
   const active = clients.filter(c => !c.archived);
   const archived = clients.filter(c => c.archived);
-  return <><Card title={editing ? 'Edit Participant' : 'Add Participant'}><div className="grid"><Field label="Participant Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><Field type="date" label="Plan Start Date" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="Plan End Date" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/><Field type="number" step="0.01" label="Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field type="date" label="Consent Expiry" value={form.consentExpiry} onChange={e => setForm(p => ({ ...p, consentExpiry: e.target.value }))}/><Field type="date" label="Service Agreement Expiry" value={form.agreementExpiry} onChange={e => setForm(p => ({ ...p, agreementExpiry: e.target.value }))}/><Field type="date" label="Risk Review Date" value={form.riskReviewDate} onChange={e => setForm(p => ({ ...p, riskReviewDate: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/><Field label="Compliance Notes" multiline value={form.complianceNotes} onChange={e => setForm(p => ({ ...p, complianceNotes: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Participant' : 'Save Participant'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Participants" action={`${active.length} active`}><ClientTable rows={active} edit={edit} archive={archive} del={del} /></Card><Card title="Archived Participants" action={`${archived.length} archived`}><ClientTable rows={archived} archivedView edit={edit} archive={archive} del={del} /></Card></>;
-}
-
-
-
-function InvoiceStatusControls({ invoice, onChange, compact = false }) {
-  const [note, setNote] = useState(invoice?.statusNote || '');
-  const current = normaliseInvoiceStatus(invoice?.status);
-  return <div className={compact ? 'invoice-status-controls compact' : 'invoice-status-controls'}>
-    <div className="status-buttons">
-      {INVOICE_STATUSES.filter(status => status !== 'Draft').map(status => <button key={status} className={current === status ? 'active' : ''} onClick={() => onChange?.(invoice.id, status, note)}>{status}</button>)}
-    </div>
-    {!compact && <Field label="Status note" value={note} placeholder="Optional payment/cancellation note" onChange={e => setNote(e.target.value)} />}
-  </div>;
-}
-
-function ClientTable({ rows, archivedView = false, edit, archive, del }) {
-  return <div className="participant-table">
-    <div className="participant-table-head"><span>Participant</span><span>Plan Start</span><span>Plan End</span><span>Budget</span><span>Used</span><span>Remaining</span><span>Status</span><span>Actions</span></div>
-    <Records rows={rows} empty={archivedView ? 'No archived participants.' : 'No participants yet.'} render={c => {
-      const budget = Number(c.budget || 0);
-      const used = 0;
-      const remaining = budget - used;
-      const days = daysUntil(c.planEndDate);
-      const status = c.archived ? 'Archived' : days === null ? 'Incomplete' : days < 0 ? 'Expired' : days <= 30 ? 'Due soon' : 'Current';
-      const tone = c.archived ? 'missing' : days === null ? 'missing' : days < 0 ? 'overdue' : days <= 30 ? 'due' : 'current';
-      return <div className="participant-table-row" key={c.id}>
-        <div><b>{c.name || 'Unnamed participant'}</b><small>{c.ndisNumber || 'NDIS not recorded'}</small></div>
-        <span>{fmt(c.planStartDate)}</span>
-        <span>{fmt(c.planEndDate)}</span>
-        <strong>{money(budget)}</strong>
-        <span>{money(used)}</span>
-        <span>{money(remaining)}</span>
-        <span className={`traffic-pill ${tone}`}>{status}</span>
-        <div className="actions"><button onClick={() => edit?.(c)}>Edit</button><button onClick={() => archive?.(c.id)}>{archivedView ? 'Unarchive' : 'Archive'}</button><button className="danger" onClick={() => del?.(c.id)}>Delete</button></div>
-      </div>;
-    }} />
-  </div>;
-}
-
-function Invoices({ pricingItems = DEFAULT_PRICING_ITEMS, clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, onStatusChange, query, setQuery, cancel }) {
-  const filtered = invoices.filter(i => `${i.invoiceNumber || ''} ${i.clientName || ''} ${normaliseInvoiceStatus(i.status)}`.toLowerCase().includes(String(query || '').toLowerCase()));
-  return <>
-    <Card title={editing ? 'Edit Invoice' : 'New Invoice'}>
-      <div className="grid">
-        <label><span>Participant</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">Select active participant</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-        <Field type="date" label="Due Date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}/>
-      </div>
-      {form.lines.map((line, idx) => <div className="line" key={line.id}>
-        <div className="line-head"><b>Service line {idx + 1}</b>{form.lines.length > 1 && <button className="danger" onClick={() => removeLine(line.id)}>Remove</button>}</div>
-        <div className="grid">
-          <label><span>Support Item</span><select value={line.itemCode || line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{pricingItems.map(item => <option key={item.id || item.itemNumber} value={item.itemNumber || item.id}>{item.itemNumber ? `${item.itemNumber} — ${item.label}` : item.label}</option>)}</select></label>
-          <Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/>
-          <Field label="Unit" value={line.unitType} onChange={e => setLine(line.id, 'unitType', e.target.value)}/>
-          <Field type="number" step="0.01" label="Quantity" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/>
-          <Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/>
-          <Field label="Line Notes" value={line.notes || ''} onChange={e => setLine(line.id, 'notes', e.target.value)}/>
-        </div>
-        <strong className="subtotal">Line total: {money(Number(line.quantity || 0) * Number(line.rate || 0))}</strong>
-      </div>)}
-      <button onClick={addLine}>+ Add service line</button>
-      <Field label="Invoice Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/>
-      <button className="primary" onClick={save}>{editing ? 'Update Invoice' : 'Save Invoice'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}
-    </Card>
-    <Card title="Invoice Register" action={`${filtered.length} invoices`}>
-      <label className="search inline-search">⌕<input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)}/></label>
-      <Records rows={filtered} empty="No invoices yet." render={inv => <div className="invoice-tile" key={inv.id}>
-        <summary><div><b>{inv.invoiceNumber}</b><small>{inv.clientName} · Due {fmt(inv.dueDate)}</small></div><strong>{money(inv.total)}</strong><em>{normaliseInvoiceStatus(inv.status)}</em></summary>
-        <InvoiceStatusControls invoice={inv} onChange={onStatusChange} />
-        <div className="actions"><button onClick={() => edit(inv)}>Edit</button><button onClick={() => exportPDF(inv)}>PDF</button><button className="danger" onClick={() => del(inv.id)}>Delete</button></div>
-      </div>} />
-    </Card>
-  </>;
-}
-
-function FinanceWorkspace({ clients, transactions, invoices, form, setForm, editing, save, edit, del, cancel }) {
-  const [tab, setTab] = useState('transactions');
-  const [filters, setFilters] = useState({ type: 'all', status: 'all', clientId: 'all', sort: 'date_desc', query: '' });
-  const [page, setPage] = useState(1);
-  const rows = filterAndSortTransactions(transactions, filters);
-  const { totalPages, safePage, start, pageRows } = paginateRows(rows, page);
-  useEffect(() => { setPage(1); }, [filters.type, filters.status, filters.clientId, filters.sort, filters.query, transactions.length]);
-  const income = rows.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount||0),0);
-  const expenses = rows.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount||0),0);
-  const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
-  return <>
-    <Card title="Finance" action="Billing and Outgoings">
-      <div className="subnav"><button className={tab === 'transactions' ? 'active' : ''} onClick={() => setTab('transactions')}>Transactions</button><button className={tab === 'expenses' ? 'active' : ''} onClick={() => setTab('expenses')}>Expenses</button><button className={tab === 'sync' ? 'active' : ''} onClick={() => setTab('sync')}>Invoice Sync</button></div>
-      <div className="mini-stats"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income - expenses)}</b></div>
-    </Card>
-    {tab !== 'sync' && <Card title={editing ? 'Edit Transaction' : 'New Transaction'}>
-      <div className="grid">
-        <label><span>Participant</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No participant</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-        <label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option value="expense">Expense</option><option value="income">Income</option></select></label>
-        <label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option value="pending">Pending</option><option value="paid">Paid</option></select></label>
-        <Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/>
-        <Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/>
-        <Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/>
-        <Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/>
-      </div>
-      <button className="primary" onClick={save}>{editing ? 'Update Transaction' : 'Save Transaction'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}
-    </Card>}
-    {tab === 'sync' ? <Card title="Invoice Sync"><Records rows={invoices} empty="No invoices to sync." render={inv => <div className="txn-row" key={inv.id}><div><b>{inv.invoiceNumber}</b><small>{inv.clientName} · {normaliseInvoiceStatus(inv.status)}</small></div><strong>{money(inv.total)}</strong><span>{transactions.some(t => t.invoiceId === inv.id) ? 'Linked' : 'No transaction'}</span></div>} /></Card> : <Card title={tab === 'expenses' ? 'Expenses Register' : 'Transaction Register'} action={`${rows.length ? start + 1 : 0}-${Math.min(start + PAGE_SIZE, rows.length)} of ${rows.length}`}>
-      <div className="filters"><Field label="Search" value={filters.query} placeholder="Description, participant, category" onChange={e => setFilter('query', e.target.value)} /><label><span>Type</span><select value={filters.type} onChange={e => setFilter('type', e.target.value)}><option value="all">All</option><option value="income">Income</option><option value="expense">Expense</option></select></label><label><span>Status</span><select value={filters.status} onChange={e => setFilter('status', e.target.value)}><option value="all">All</option><option value="pending">Pending</option><option value="paid">Paid</option></select></label><label><span>Participant</span><select value={filters.clientId} onChange={e => setFilter('clientId', e.target.value)}><option value="all">All participants</option><option value="none">No participant</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span>Sort</span><select value={filters.sort} onChange={e => setFilter('sort', e.target.value)}><option value="date_desc">Newest date</option><option value="date_asc">Oldest date</option><option value="amount_desc">Highest amount</option><option value="amount_asc">Lowest amount</option></select></label></div>
-      <Records rows={pageRows.filter(t => tab === 'transactions' || t.type === 'expense')} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No participant'} · {t.category || 'General'} · {fmt(t.date)} · {(t.status || 'paid')}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>} />{rows.length > PAGE_SIZE && <Pagination page={safePage} totalPages={totalPages} onPrev={() => setPage(p => Math.max(1, p - 1))} onNext={() => setPage(p => Math.min(totalPages, p + 1))} />}
-    </Card>}
-  </>;
+  return <><Card title={editing ? 'Edit Participant' : 'Add Participant'}><div className="grid"><Field label="Participant Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><Field type="date" label="Plan Start Date" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="Plan End Date" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/><Field type="number" step="0.01" label="Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field type="date" label="Consent Expiry" value={form.consentExpiry} onChange={e => setForm(p => ({ ...p, consentExpiry: e.target.value }))}/><Field type="date" label="Service Agreement Expiry" value={form.agreementExpiry} onChange={e => setForm(p => ({ ...p, agreementExpiry: e.target.value }))}/><Field type="date" label="Risk Review Date" value={form.riskReviewDate} onChange={e => setForm(p => ({ ...p, riskReviewDate: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/><Field label="Compliance Notes" multiline value={form.complianceNotes} onChange={e => setForm(p => ({ ...p, complianceNotes: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Participant' : 'Save Participant'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Participants" action={`${active.length} active`}><ClientTable rows={active} /></Card><Card title="Archived Participants" action={`${archived.length} archived`}><ClientTable rows={archived} archivedView /></Card></>;
 }
 
 function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness, saveBusiness, workers = [], workerForm, setWorkerForm, editingWorker, saveWorker, editWorker, archiveWorker, deleteWorker, cancelWorker }) {
@@ -1218,13 +1116,13 @@ function ParticipantCompliance({ rows }) {
 
 function BusinessCompliance({ businessRows, updateBusinessCompliance, saveCompliance }) {
   return <Card title="Business Compliance" action={<button className="primary" onClick={saveCompliance}>Save Compliance</button>}>
-    <p>Maintain company-level insurance and audit due dates. Worker checks and training are managed under Employees Compliance.</p>
+    <p>Maintain insurance, audits, worker checks and mandatory business training due dates.</p>
     <div className="business-compliance-list">
-      {BUSINESS_COMPLIANCE_GROUPS.map(group => <section key={group} className="business-compliance-group"><div className="compliance-section-title"><h4>{group}</h4><small>{businessRows.filter(item => item.group === group).length} items</small></div>{businessRows.filter(item => item.group === group).map(item => <div className="business-compliance-row" key={item.id}>
+      {['Insurance','Audits','Worker Checks','Mandatory Training'].map(group => <section key={group} className="business-compliance-group"><h4>{group}</h4>{businessRows.filter(item => item.group === group).map(item => <div className="business-compliance-row" key={item.id}>
         <label><span>Item</span><input value={item.label} onChange={e => updateBusinessCompliance(item.id, 'label', e.target.value)} /></label>
         <label><span>Due date</span><input type="date" value={item.dueDate} onChange={e => updateBusinessCompliance(item.id, 'dueDate', e.target.value)} /></label>
         <label><span>Notes</span><input value={item.notes || ''} onChange={e => updateBusinessCompliance(item.id, 'notes', e.target.value)} /></label>
-        <div><span className={`traffic-pill ${item.status.tone}`}>{item.status.label}</span><small>{statusSummary(item.dueDate)}</small></div>
+        <span className={`traffic-pill ${item.status.tone}`}>{item.status.label}</span>
       </div>)}</section>)}
     </div>
   </Card>;
