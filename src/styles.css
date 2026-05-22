@@ -693,3 +693,8 @@ label span{color:#07348B!important;}
 .business-compliance-row{display:grid;grid-template-columns:1.2fr .75fr 1fr auto;gap:12px;align-items:end;padding:12px 0;border-top:1px solid var(--line2)}
 .business-compliance-row:first-of-type{border-top:0}
 @media(max-width:1180px){.compliance-table-head,.compliance-table-row,.business-compliance-row{grid-template-columns:1fr}.compliance-table-head{display:none}.business-compliance-row{align-items:stretch}}
+
+.archived-participants summary{cursor:pointer;font-weight:900;color:var(--gold2);padding:12px 0;list-style:none}
+.archived-participants summary::-webkit-details-marker{display:none}
+.archived-participants summary:after{content:'Open';float:right;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.12em}
+.archived-participants[open] summary:after{content:'Collapse'}

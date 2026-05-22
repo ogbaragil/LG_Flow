@@ -173,7 +173,8 @@ export default function App() {
   const [cloudChecked, setCloudChecked] = useState(false);
   const [cloudLoading, setCloudLoading] = useState(false);
   const autoSyncTimer = useRef(null);
-  const autoSyncSkip = useRef(true);
+  const lastCloudSnapshotRef = useRef('');
+  const lastLocalSnapshotRef = useRef('');
 
   useEffect(() => {
     let mounted = true;
@@ -198,6 +199,9 @@ export default function App() {
     setWorkers(d?.workers || []);
   };
 
+  const currentPayload = () => ({ business, clients, invoices, transactions, workers });
+  const serialisePayload = (data) => JSON.stringify(data || currentPayload());
+
   useEffect(() => {
     if (authLoading || !user?.id) return;
     setStorageLoaded(false);
@@ -214,31 +218,43 @@ export default function App() {
 
   useEffect(() => {
     if (!storageLoaded || !user?.id) return;
-    localStorage.setItem(storageKeyFor(user), JSON.stringify({ business, clients, invoices, transactions, workers }));
+    const snapshot = serialisePayload(currentPayload());
+    if (snapshot === lastLocalSnapshotRef.current) return;
+    lastLocalSnapshotRef.current = snapshot;
+    localStorage.setItem(storageKeyFor(user), snapshot);
   }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers]);
 
   useEffect(() => {
     if (!storageLoaded || !cloudChecked || cloudLoading || !user?.id || !supabase) return;
-    if (autoSyncSkip.current) { autoSyncSkip.current = false; return; }
+    const data = currentPayload();
+    const snapshot = serialisePayload(data);
+    if (snapshot === lastCloudSnapshotRef.current) return;
     clearTimeout(autoSyncTimer.current);
-    autoSyncTimer.current = setTimeout(() => {
-      syncSnapshot({ business, clients, invoices, transactions, workers }, user).catch(() => {});
-    }, 1200);
+    autoSyncTimer.current = setTimeout(async () => {
+      const result = await syncSnapshot(data, user).catch(error => ({ ok: false, message: error?.message || 'Cloud sync failed.' }));
+      if (result.ok) lastCloudSnapshotRef.current = snapshot;
+    }, 650);
     return () => clearTimeout(autoSyncTimer.current);
   }, [storageLoaded, cloudChecked, cloudLoading, user?.id, business, clients, invoices, transactions, workers]);
 
   const loadCloudData = async ({ silent = false } = {}) => {
     if (!user?.id) return { ok: false, message: 'Please sign in first.' };
     setCloudLoading(true);
-    const r = await loadSnapshot(user);
-    if (r.ok && r.payload) {
-      applyPayload(r.payload);
-      if (!silent) showNotice('Cloud data loaded.');
-    } else if (!silent) {
-      showNotice(r.message || 'No cloud data found yet.');
+    try {
+      const r = await loadSnapshot(user);
+      if (r.ok && r.payload) {
+        const nextPayload = { business: { ...EMPTY_BUSINESS, ...(r.payload.business || {}) }, clients: r.payload.clients || [], invoices: r.payload.invoices || [], transactions: r.payload.transactions || [], workers: r.payload.workers || [] };
+        lastCloudSnapshotRef.current = serialisePayload(nextPayload);
+        lastLocalSnapshotRef.current = '';
+        applyPayload(nextPayload);
+        if (!silent) showNotice('Cloud data loaded.');
+      } else if (!silent) {
+        showNotice(r.message || 'No cloud data found yet.');
+      }
+      return r;
+    } finally {
+      setCloudLoading(false);
     }
-    setCloudLoading(false);
-    return r;
   };
 
   useEffect(() => {
@@ -248,9 +264,17 @@ export default function App() {
     setCloudLoading(true);
     loadSnapshot(user).then((r) => {
       if (cancelled) return;
-      if (r.ok && r.payload) applyPayload(r.payload);
-      setCloudChecked(true);
-      setCloudLoading(false);
+      if (r.ok && r.payload) {
+        const nextPayload = { business: { ...EMPTY_BUSINESS, ...(r.payload.business || {}) }, clients: r.payload.clients || [], invoices: r.payload.invoices || [], transactions: r.payload.transactions || [], workers: r.payload.workers || [] };
+        lastCloudSnapshotRef.current = serialisePayload(nextPayload);
+        lastLocalSnapshotRef.current = '';
+        applyPayload(nextPayload);
+      }
+    }).finally(() => {
+      if (!cancelled) {
+        setCloudChecked(true);
+        setCloudLoading(false);
+      }
     });
     return () => { cancelled = true; };
   }, [storageLoaded, user?.id]);
@@ -580,7 +604,7 @@ export default function App() {
       <div className="profile-card"><div className="avatar">{(user.email || 'KC').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><h2>{welcomeMessage}</h2><p>{business.name || 'Kajola Care Operations'}</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onFocus={() => setActive('Invoices')} onKeyDown={e => { if (e.key === 'Enter') setActive('Invoices'); }} onChange={e => { setQuery(e.target.value); if (active !== 'Invoices') setActive('Invoices'); }}/><kbd>⌘K</kbd></label><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button><div className="user-badge">{userInitial}</div></div></header>
+      <header className="topbar"><div><h2>{welcomeMessage}</h2><p>{business.name || 'Kajola Care Operations'}</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onFocus={() => setActive('Invoices')} onKeyDown={e => { if (e.key === 'Enter') setActive('Invoices'); }} onChange={e => { setQuery(e.target.value); if (active !== 'Invoices') setActive('Invoices'); }}/><kbd>⌘K</kbd></label><button className="ghost" onClick={async () => { await syncSnapshot(currentPayload(), user).catch(() => {}); await supabase.auth.signOut(); }}>Sign out</button></div></header>
       {notice && <div className="notice">{notice}</div>}
       {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} business={business} setActive={setActive}/>} 
       {active === 'Participants' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
@@ -589,7 +613,7 @@ export default function App() {
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} />}
       {active === 'Reports' && <FutureWorkspace title="Reports" description="Operational and financial reporting is planned for the next Kajola Care release." />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
-      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>} 
+      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = currentPayload(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
     </main>
   </div>
   <MobileShell
@@ -641,7 +665,7 @@ export default function App() {
     cancelTxn={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}
     setBusiness={setBusiness}
     saveBusiness={saveBusiness}
-    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => showNotice((await syncSnapshot(payload, user)).message)} load={async () => loadCloudData()}/>}
+    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = currentPayload(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>}
   />
 </>;
 }
@@ -994,7 +1018,7 @@ function Clients({ clients, form, setForm, editing, save, edit, archive, del, ca
   const active = clients.filter(c => !c.archived);
   const archived = clients.filter(c => c.archived);
   const ClientTable = ({ rows, archivedView = false }) => <div className="client-table"><div className="client-table-head"><span>Participant</span><span>Plan</span><span>Budget</span><span>Contact</span><span>Actions</span></div><Records rows={rows} empty={archivedView ? 'No archived clients.' : 'No active participants added yet.'} render={c => <div className="client-table-row" key={c.id}><div><b>{c.name}</b><small>{c.address || '-'}</small></div><div><b>{c.ndisNumber || '-'}</b><small>{fmt(c.planStartDate)} → {fmt(c.planEndDate)}</small></div><div><b>{money(c.budget)}</b><small>{(() => { const d = daysUntil(c.planEndDate); return d === null ? 'No end date' : d < 0 ? 'Plan ended' : `${d} days left`; })()}</small></div><div><b>{c.email || '-'}</b><small>{c.phone || '-'}</small></div><div className="actions"><button onClick={() => edit(c)}>Edit</button><button onClick={() => archive(c.id)}>{archivedView ? 'Unarchive' : 'Archive'}</button><button className="danger" onClick={() => del(c.id)}>Delete</button></div></div>} /></div>;
-  return <><Card title={editing ? 'Edit Participant' : 'Add Participant'}><div className="grid"><Field label="Participant Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><Field type="date" label="Plan Start Date" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="Plan End Date" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/><Field type="number" step="0.01" label="Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field type="date" label="Consent Expiry" value={form.consentExpiry} onChange={e => setForm(p => ({ ...p, consentExpiry: e.target.value }))}/><Field type="date" label="Service Agreement Expiry" value={form.agreementExpiry} onChange={e => setForm(p => ({ ...p, agreementExpiry: e.target.value }))}/><Field type="date" label="Risk Review Date" value={form.riskReviewDate} onChange={e => setForm(p => ({ ...p, riskReviewDate: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/><Field label="Compliance Notes" multiline value={form.complianceNotes} onChange={e => setForm(p => ({ ...p, complianceNotes: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Participant' : 'Save Participant'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Participants" action={`${active.length} active`}><ClientTable rows={active} /></Card><Card title="Archived Participants" action={`${archived.length} archived`}><ClientTable rows={archived} archivedView /></Card></>;
+  return <><Card title={editing ? 'Edit Participant' : 'Add Participant'}><div className="grid"><Field label="Participant Name" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}/><Field label="NDIS Number" value={form.ndisNumber} onChange={e => setForm(p => ({ ...p, ndisNumber: e.target.value }))}/><Field type="date" label="Plan Start Date" value={form.planStartDate} onChange={e => setForm(p => ({ ...p, planStartDate: e.target.value }))}/><Field type="date" label="Plan End Date" value={form.planEndDate} onChange={e => setForm(p => ({ ...p, planEndDate: e.target.value }))}/><Field type="number" step="0.01" label="Budget" value={form.budget} onChange={e => setForm(p => ({ ...p, budget: e.target.value }))}/><Field type="date" label="Consent Expiry" value={form.consentExpiry} onChange={e => setForm(p => ({ ...p, consentExpiry: e.target.value }))}/><Field type="date" label="Service Agreement Expiry" value={form.agreementExpiry} onChange={e => setForm(p => ({ ...p, agreementExpiry: e.target.value }))}/><Field type="date" label="Risk Review Date" value={form.riskReviewDate} onChange={e => setForm(p => ({ ...p, riskReviewDate: e.target.value }))}/><Field label="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}/><Field label="Phone" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}/><Field label="Address" multiline value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}/><Field label="Compliance Notes" multiline value={form.complianceNotes} onChange={e => setForm(p => ({ ...p, complianceNotes: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update Participant' : 'Save Participant'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Participants" action={`${active.length} active`}><ClientTable rows={active} /></Card><Card title="Archived Participants" action={`${archived.length} archived`}><details className="archived-participants"><summary>Show archived participants</summary><ClientTable rows={archived} archivedView /></details></Card></>;
 }
 
 function Invoices({ pricingItems = DEFAULT_PRICING_ITEMS, clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, onStatusChange, cancel, query = '', setQuery = () => {} }) {
