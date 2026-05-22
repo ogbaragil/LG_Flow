@@ -211,6 +211,7 @@ const LEGACY_WORKER_TEMPLATE_NAMES = new Set([
   'police check',
   'worker screening',
   'working with children check',
+  'jhk',
 ]);
 const hasWorkerComplianceData = (worker = {}) => DEFAULT_WORKER_COMPLIANCE_ITEMS.some(item => Boolean(worker?.[item.key]));
 const isLegacyTemplateWorker = (worker = {}) => {
@@ -347,23 +348,12 @@ export default function App() {
     localStorage.setItem(storageKeyFor(user), snapshot);
   }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers]);
 
+  // Cloud sync is manual only. Local changes are still saved immediately to this device.
   useEffect(() => {
-    if (!storageLoaded || !cloudChecked || cloudLoading || !user?.id || !supabase) return;
-    const data = payloadWithFreshMeta();
-    const snapshot = serialisePayload(data);
-    if (skipNextAutoSyncRef.current) {
-      skipNextAutoSyncRef.current = false;
-      lastCloudSnapshotRef.current = snapshot;
-      return;
-    }
-    if (snapshot === lastCloudSnapshotRef.current) return;
-    clearTimeout(autoSyncTimer.current);
-    autoSyncTimer.current = setTimeout(async () => {
-      const result = await syncSnapshot(data, user).catch(error => ({ ok: false, message: error?.message || 'Cloud sync failed.' }));
-      if (result.ok) lastCloudSnapshotRef.current = snapshot;
-    }, 650);
-    return () => clearTimeout(autoSyncTimer.current);
-  }, [storageLoaded, cloudChecked, cloudLoading, user?.id, business, clients, invoices, transactions, workers]);
+    if (!storageLoaded || !user?.id) return;
+    setCloudChecked(true);
+    setCloudLoading(false);
+  }, [storageLoaded, user?.id]);
 
   const loadCloudData = async ({ silent = false } = {}) => {
     if (!user?.id) return { ok: false, message: 'Please sign in first.' };
@@ -375,8 +365,7 @@ export default function App() {
         lastCloudSnapshotRef.current = serialisePayload(nextPayload);
         lastLocalSnapshotRef.current = '';
         applyPayload(nextPayload);
-        if (serialisePayload(nextPayload) !== serialisePayload(r.payload)) syncSnapshot(nextPayload, user).catch(() => {});
-        if (!silent) showNotice('Cloud data merged safely.');
+        if (!silent) showNotice('Cloud data loaded into this device. Press Sync to Supabase when you want to update the cloud snapshot.');
       } else if (!silent) {
         showNotice(r.message || 'No cloud data found yet.');
       }
@@ -385,30 +374,6 @@ export default function App() {
       setCloudLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (!storageLoaded || !user?.id) return;
-    let cancelled = false;
-    setCloudChecked(false);
-    setCloudLoading(true);
-    loadSnapshot(user).then((r) => {
-      if (cancelled) return;
-      if (r.ok && r.payload) {
-        const localPayload = payloadWithFreshMeta();
-        const nextPayload = mergePayloads(localPayload, r.payload);
-        lastCloudSnapshotRef.current = serialisePayload(nextPayload);
-        lastLocalSnapshotRef.current = '';
-        applyPayload(nextPayload);
-        if (serialisePayload(nextPayload) !== serialisePayload(r.payload)) syncSnapshot(nextPayload, user).catch(() => {});
-      }
-    }).finally(() => {
-      if (!cancelled) {
-        setCloudChecked(true);
-        setCloudLoading(false);
-      }
-    });
-    return () => { cancelled = true; };
-  }, [storageLoaded, user?.id]);
 
   const totals = useMemo(() => {
     const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
@@ -742,11 +707,11 @@ export default function App() {
     <aside className="sidebar">
       <div className="brand"><BrandMark /><div><BrandWordmark /><p>Care • Connect • Empower</p></div></div>
       <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
-      <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'All systems operational' : 'Cloud sync disabled'}</small></div>
+      <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'Manual cloud sync ready' : 'Cloud sync disabled'}</small></div>
       <div className="profile-card"><div className="avatar">{(user.email || 'KC').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><h2>{welcomeMessage}</h2><p>{business.name || 'Kajola Care Operations'}</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onFocus={() => setActive('Invoices')} onKeyDown={e => { if (e.key === 'Enter') setActive('Invoices'); }} onChange={e => { setQuery(e.target.value); if (active !== 'Invoices') setActive('Invoices'); }}/><kbd>⌘K</kbd></label><button className="ghost" onClick={async () => { await syncSnapshot(payloadWithFreshMeta(), user).catch(() => {}); await supabase.auth.signOut(); }}>Sign out</button></div></header>
+      <header className="topbar"><div><h2>{welcomeMessage}</h2><p>{business.name || 'Kajola Care Operations'}</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onFocus={() => setActive('Invoices')} onKeyDown={e => { if (e.key === 'Enter') setActive('Invoices'); }} onChange={e => { setQuery(e.target.value); if (active !== 'Invoices') setActive('Invoices'); }}/><kbd>⌘K</kbd></label><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button></div></header>
       {notice && <div className="notice">{notice}</div>}
       {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} business={business} setActive={setActive}/>} 
       {active === 'Participants' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
@@ -777,7 +742,7 @@ export default function App() {
     user={user}
     theme={theme}
     toggleTheme={toggleTheme}
-    onSignOut={async () => { await syncSnapshot(payloadWithFreshMeta(), user).catch(() => {}); await supabase.auth.signOut(); }}
+    onSignOut={async () => { await supabase.auth.signOut(); }}
     clientForm={clientForm}
     setClientForm={setClientForm}
     editingClient={editingClient}
@@ -1111,7 +1076,7 @@ function getComplianceItems({ clients, invoices, business, workers = [] }) {
   const items = [];
   buildParticipantComplianceRows(clients).forEach(row => {
     row.items.forEach(item => {
-      if (['due', 'overdue', 'missing'].includes(item.status.tone)) {
+      if (['due', 'overdue'].includes(item.status.tone)) {
         items.push({
           id: `participant-${row.client.id}-${item.key}`,
           type: 'Participant',
@@ -1123,11 +1088,10 @@ function getComplianceItems({ clients, invoices, business, workers = [] }) {
         });
       }
     });
-    if (!row.client.ndisNumber) items.push({ id: `ndis-${row.client.id}`, type: 'Participant', title: `${row.client.name} NDIS number`, detail: 'Participant profile incomplete', status: 'Missing', tone: 'missing', sort: 3 });
   });
   buildWorkerComplianceRows(workers).forEach(row => {
     row.items.forEach(item => {
-      if (['due', 'overdue', 'missing'].includes(item.status.tone)) {
+      if (['due', 'overdue'].includes(item.status.tone)) {
         items.push({
           id: `worker-${row.worker.id}-${item.key}`,
           type: 'Employee',
@@ -1141,7 +1105,7 @@ function getComplianceItems({ clients, invoices, business, workers = [] }) {
     });
   });
   buildBusinessComplianceRows(business).forEach(item => {
-    if (['due', 'overdue', 'missing'].includes(item.status.tone)) {
+    if (['due', 'overdue'].includes(item.status.tone)) {
       items.push({
         id: `business-${item.id}`,
         type: item.group,
@@ -1414,7 +1378,7 @@ function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, 
         onSave={() => saveBusiness({ ...draft, pricingItems: draft.pricingItems || DEFAULT_PRICING_ITEMS })}
       />}
     </Card>
-    <Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is tied to your signed-in account and includes your full workspace. Cloud restore now safely merges with newer local changes instead of blindly replacing them.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON<input type="file" accept="application/json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])}/></label><button className="primary" onClick={sync}>Sync to Supabase</button><button onClick={load}>Load from Supabase</button><button className="danger" onClick={clear}>Clear All Data</button></Card>
+    <Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is tied to your signed-in account and includes your full workspace. Cloud sync is manual only. Local saves stay on this device until you press Sync to Supabase; Load from Supabase is manual.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON<input type="file" accept="application/json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])}/></label><button className="primary" onClick={sync}>Sync to Supabase</button><button onClick={load}>Load from Supabase</button><button className="danger" onClick={clear}>Clear All Data</button></Card>
     <Card title="Data Summary"><div className="mini-stats"><b>Business: {business.name || 'Not set'}</b><b>Pricing Items: {getPricingItems(business).length}</b><b>Clients: {clients.length}</b><b>Invoices: {invoices.length}</b><b>Transactions: {transactions.length}</b></div></Card>
     <Card title="Cloud Status"><p><b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b></p><p>{isSupabaseConfigured ? `Signed in as ${user?.email || 'your account'}. Your cloud snapshot is private to this login.` : 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Cloudflare Pages variables, public/supabase-config.js, or the app setup screen.'}</p><p><small>Config source: {supabaseConfigSource}</small></p><button onClick={async () => supabase && supabase.auth.signOut()}>Sign out</button></Card>
   </>;
