@@ -718,7 +718,7 @@ export default function App() {
       {active === 'Invoices' && <Invoices pricingItems={pricingItems} clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} query={query} setQuery={setQuery} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Finance' && <FinanceWorkspace business={business} clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} updateStatus={updateTxnStatus} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} />}
-      {active === 'Reports' && <FutureWorkspace title="Reports" description="Operational and financial reporting is planned for the next Kajola Care release." />}
+      {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
       {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
     </main>
@@ -804,7 +804,7 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
       {active === 'Invoices' && <MobileInvoices pricingItems={pricingItems} clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={cancelInvoice} query={query} setQuery={setQuery} />}
       {active === 'Finance' && <MobileFinance business={business} clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} />}
-      {active === 'Reports' && <FutureWorkspace title="Reports" description="Operational and financial reporting is planned for the next Kajola Care release." />}
+      {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
       {active === 'Settings' && <div className="mobile-settings"><MobileMore setActive={setActive} />{settings}</div>}
     </main>
@@ -1166,6 +1166,190 @@ const paginateRows = (rows, page, pageSize = PAGE_SIZE) => {
   return { totalPages, safePage, start, pageRows: rows.slice(start, start + pageSize) };
 };
 
+
+const TRANSACTION_REPORT_PERIODS = [
+  { key: '1m', label: '1 month', months: 1 },
+  { key: '3m', label: '3 months', months: 3 },
+  { key: '6m', label: '6 months', months: 6 },
+  { key: '12m', label: '12 months', months: 12 },
+  { key: 'all', label: 'All time', months: null },
+];
+
+function getTransactionReportRows(transactions = [], period = '1m') {
+  const option = TRANSACTION_REPORT_PERIODS.find(p => p.key === period) || TRANSACTION_REPORT_PERIODS[0];
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  const start = option.months ? new Date(end) : null;
+  if (start) {
+    start.setMonth(start.getMonth() - option.months);
+    start.setHours(0, 0, 0, 0);
+  }
+  return [...transactions]
+    .filter(t => {
+      if (!t.date) return option.key === 'all';
+      const txDate = new Date(`${t.date}T12:00:00`);
+      if (Number.isNaN(txDate.getTime())) return option.key === 'all';
+      return (!start || txDate >= start) && txDate <= end;
+    })
+    .sort((a, b) => dateValue(b.date) - dateValue(a.date));
+}
+
+function transactionReportSummary(rows = []) {
+  const income = rows.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
+  const expenses = rows.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount || 0), 0);
+  return { income, expenses, net: income - expenses, count: rows.length };
+}
+
+function exportTransactionReportPdf({ business = {}, transactions = [], period = '1m' }) {
+  const option = TRANSACTION_REPORT_PERIODS.find(p => p.key === period) || TRANSACTION_REPORT_PERIODS[0];
+  const rows = getTransactionReportRows(transactions, period);
+  const summary = transactionReportSummary(rows);
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const right = pageWidth - margin;
+  let y = 18;
+  const cleanFile = (value) => String(value || 'Kajola-Care').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
+  const txName = (t) => t.clientId === BUSINESS_TXN_CLIENT_ID ? (t.clientName || business.name || 'Business') : (t.clientName || 'No participant');
+  const drawFooter = () => {
+    const pages = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pages; i += 1) {
+      doc.setPage(i);
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, pageHeight - 14, right, pageHeight - 14);
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`${business.name || 'Kajola Care'} · Transaction Report`, margin, pageHeight - 8);
+      doc.text(`Page ${i} of ${pages}`, right, pageHeight - 8, { align: 'right' });
+    }
+  };
+  const ensureSpace = (needed = 12) => {
+    if (y + needed > pageHeight - 22) {
+      doc.addPage();
+      y = 18;
+    }
+  };
+
+  doc.setFillColor(7, 52, 139);
+  doc.rect(0, 0, pageWidth, 34, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(18);
+  doc.text('Transaction Report', margin, 16);
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(9);
+  doc.text(`${option.label} · Generated ${new Date().toLocaleDateString()}`, margin, 24);
+  doc.setFont(undefined, 'bold');
+  doc.text(safeText(business.name || 'Kajola Care'), right, 16, { align: 'right' });
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(8);
+  [business.abn ? `ABN ${business.abn}` : '', business.email || '', business.phone || ''].filter(Boolean).slice(0, 3).forEach((line, idx) => {
+    doc.text(safeText(line), right, 23 + idx * 4, { align: 'right' });
+  });
+  y = 44;
+
+  const cardW = (pageWidth - margin * 2 - 9) / 4;
+  const cards = [
+    ['Income', money(summary.income)],
+    ['Expenses', money(summary.expenses)],
+    ['Net', money(summary.net)],
+    ['Transactions', String(summary.count)],
+  ];
+  cards.forEach(([label, value], idx) => {
+    const x = margin + idx * (cardW + 3);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(214, 226, 242);
+    doc.roundedRect(x, y, cardW, 22, 3, 3, 'FD');
+    doc.setFontSize(7);
+    doc.setTextColor(7, 52, 139);
+    doc.setFont(undefined, 'bold');
+    doc.text(label.toUpperCase(), x + 4, y + 7);
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(value, x + 4, y + 16);
+  });
+  y += 34;
+
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Register', margin, y);
+  y += 6;
+  doc.setFillColor(15, 23, 42);
+  doc.roundedRect(margin, y, pageWidth - margin * 2, 10, 2, 2, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(7.5);
+  const cols = { date: margin + 3, type: margin + 25, desc: margin + 45, client: margin + 92, status: margin + 135, amount: right - 3 };
+  doc.text('DATE', cols.date, y + 6.4);
+  doc.text('TYPE', cols.type, y + 6.4);
+  doc.text('DESCRIPTION', cols.desc, y + 6.4);
+  doc.text('PARTICIPANT / BUSINESS', cols.client, y + 6.4);
+  doc.text('STATUS', cols.status, y + 6.4);
+  doc.text('AMOUNT', cols.amount, y + 6.4, { align: 'right' });
+  y += 12;
+
+  if (!rows.length) {
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.setFontSize(10);
+    doc.text(`No transactions found for ${option.label}.`, margin, y + 6);
+  } else {
+    rows.forEach((t, idx) => {
+      ensureSpace(12);
+      if (idx % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(margin, y - 5, pageWidth - margin * 2, 10, 'F');
+      }
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(51, 65, 85);
+      doc.setFontSize(8);
+      const desc = doc.splitTextToSize(safeText(t.description || '-'), 42)[0] || '-';
+      const participant = doc.splitTextToSize(safeText(txName(t)), 38)[0] || '-';
+      doc.text(fmt(t.date), cols.date, y);
+      doc.text(safeText(t.type || '-'), cols.type, y);
+      doc.text(desc, cols.desc, y);
+      doc.text(participant, cols.client, y);
+      doc.text(safeText(t.status || 'pending'), cols.status, y);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(t.type === 'expense' ? 190 : 4, t.type === 'expense' ? 18 : 120, t.type === 'expense' ? 60 : 87);
+      doc.text(`${t.type === 'expense' ? '-' : '+'}${money(t.amount)}`, cols.amount, y, { align: 'right' });
+      y += 10;
+    });
+  }
+  drawFooter();
+  doc.save(`${cleanFile(business.name)}-transaction-report-${option.key}.pdf`);
+}
+
+function ReportsWorkspace({ business, transactions = [], clients = [] }) {
+  const [period, setPeriod] = useState('1m');
+  const rows = getTransactionReportRows(transactions, period);
+  const summary = transactionReportSummary(rows);
+  const recentRows = rows.slice(0, 12);
+  return <>
+    <Card title="Reports" action="PDF exports">
+      <p>Generate professional transaction reports for management records, bookkeeping and reconciliation.</p>
+      <div className="report-periods">
+        {TRANSACTION_REPORT_PERIODS.map(option => <button key={option.key} className={period === option.key ? 'active' : ''} onClick={() => setPeriod(option.key)}>{option.label}</button>)}
+      </div>
+    </Card>
+    <Card title="Transaction PDF Report" action={`${rows.length} transactions`}>
+      <div className="report-summary-grid">
+        <InsightCard label="Income" value={money(summary.income)} sub="For selected period" />
+        <InsightCard label="Expenses" value={money(summary.expenses)} sub="For selected period" />
+        <InsightCard label="Net" value={money(summary.net)} sub="Income less expenses" />
+        <InsightCard label="Count" value={summary.count} sub="Transactions included" />
+      </div>
+      <div className="report-actions">
+        <button className="primary" onClick={() => exportTransactionReportPdf({ business, transactions, period })}>Download Transaction PDF</button>
+        <small>Period: {TRANSACTION_REPORT_PERIODS.find(p => p.key === period)?.label || '1 month'}</small>
+      </div>
+      <div className="txn-table report-preview"><div className="txn-table-head"><span>Transaction</span><span>Participant / Category</span><span>Date</span><span>Status</span><span>Amount</span><span>Type</span></div><Records rows={recentRows} empty="No transactions found for this period." render={t => <div className="txn-row" key={t.id}><div><b>{t.description || '-'}</b><small>{t.invoiceNumber ? `Invoice ${t.invoiceNumber}` : t.type}</small></div><div><b>{t.clientId === BUSINESS_TXN_CLIENT_ID ? (t.clientName || business?.name || 'Business') : (t.clientName || 'No Participant')}</b><small>{t.category || 'General'}</small></div><time>{fmt(t.date)}</time><span className="pill">{t.status || 'pending'}</span><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><span>{t.type || '-'}</span></div>} /></div>
+      {rows.length > recentRows.length && <p className="report-note">Preview shows the latest {recentRows.length} transactions. The PDF includes all {rows.length} matching transactions.</p>}
+    </Card>
+  </>;
+}
+
 function FinanceWorkspace({ business, clients, transactions, invoices = [], form, setForm, editing, save, edit, updateStatus = () => {}, del, cancel }) {
   const [filters, setFilters] = useState({ type: 'all', status: 'all', clientId: 'all', sort: 'date_desc', query: '' });
   const [page, setPage] = useState(1);
@@ -1178,7 +1362,6 @@ function FinanceWorkspace({ business, clients, transactions, invoices = [], form
   const businessLabel = business?.name || 'Business';
   const changeTxnType = (value) => setForm(p => ({ ...p, type: value, clientId: value === 'expense' ? p.clientId : (p.clientId === BUSINESS_TXN_CLIENT_ID ? '' : p.clientId) }));
   return <>
-    <div className="finance-tabs"><span className="active">Transactions</span><span>Expenses</span><span>Invoice Sync</span></div>
     <Card title={editing ? 'Edit Billing / Outgoing' : 'New Expense or Transaction'}>
       <div className="grid"><label><span>Client / Business</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Participant</option>{form.type === 'expense' && <option value={BUSINESS_TXN_CLIENT_ID}>{businessLabel}</option>}{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span>Type</span><select value={form.type} onChange={e => changeTxnType(e.target.value)}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div>
       <button className="primary" onClick={save}>{editing ? 'Update Transaction' : 'Save Transaction'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}
