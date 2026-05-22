@@ -107,13 +107,56 @@ const normaliseBusiness = (business = {}) => {
     businessCompliance: getBusinessComplianceItems(merged),
   };
 };
+const SECTION_KEYS = ['business', 'clients', 'invoices', 'transactions', 'workers'];
+const sectionUpdatedAt = (payload, section) => payload?._meta?.sectionsUpdatedAt?.[section] || '';
+const isMeaningfulBusiness = (business = {}) => {
+  const b = normaliseBusiness(business);
+  const hasProfile = ['name', 'abn', 'email', 'phone', 'address', 'paymentDetails', 'logoUrl'].some(key => String(b[key] || '').trim());
+  const hasPricing = JSON.stringify(getPricingItems(b)) !== JSON.stringify(getPricingItems({ pricingItems: DEFAULT_PRICING_ITEMS }));
+  const hasCompliance = JSON.stringify(getBusinessComplianceItems(b)) !== JSON.stringify(getBusinessComplianceItems({ businessCompliance: DEFAULT_BUSINESS_COMPLIANCE }));
+  return hasProfile || hasPricing || hasCompliance;
+};
+const isMeaningfulSection = (payload = {}, section) => {
+  if (section === 'business') return isMeaningfulBusiness(payload.business);
+  return Array.isArray(payload[section]) && payload[section].length > 0;
+};
+const normaliseMeta = (payload = {}) => ({
+  ...(payload._meta || {}),
+  schemaVersion: 2,
+  sectionsUpdatedAt: { ...(payload._meta?.sectionsUpdatedAt || {}) },
+});
 const normalisePayload = (payload = {}) => ({
   business: normaliseBusiness(payload.business || {}),
   clients: Array.isArray(payload.clients) ? payload.clients : [],
   invoices: Array.isArray(payload.invoices) ? payload.invoices : [],
   transactions: Array.isArray(payload.transactions) ? payload.transactions : [],
   workers: normaliseWorkers(payload.workers || []),
+  _meta: normaliseMeta(payload),
 });
+const stripMeta = (payload = {}) => {
+  const p = normalisePayload(payload);
+  return { business: p.business, clients: p.clients, invoices: p.invoices, transactions: p.transactions, workers: p.workers };
+};
+const mergePayloads = (localPayload = {}, cloudPayload = {}) => {
+  const local = normalisePayload(localPayload);
+  const cloud = normalisePayload(cloudPayload);
+  const merged = {};
+  const sectionsUpdatedAt = {};
+  SECTION_KEYS.forEach(section => {
+    const lt = sectionUpdatedAt(local, section);
+    const ct = sectionUpdatedAt(cloud, section);
+    const localMeaningful = isMeaningfulSection(local, section);
+    const cloudMeaningful = isMeaningfulSection(cloud, section);
+    let useLocal;
+    if (lt && ct && lt !== ct) useLocal = lt > ct;
+    else if (lt && !ct) useLocal = localMeaningful || !cloudMeaningful;
+    else if (!lt && ct) useLocal = localMeaningful && !cloudMeaningful;
+    else useLocal = localMeaningful && !cloudMeaningful;
+    merged[section] = useLocal ? local[section] : cloud[section];
+    sectionsUpdatedAt[section] = useLocal ? (lt || new Date().toISOString()) : (ct || lt || '');
+  });
+  return normalisePayload({ ...merged, _meta: { ...cloud._meta, ...local._meta, sectionsUpdatedAt } });
+};
 const getComplianceStatus = (dateStr) => {
   const d = daysUntil(dateStr);
   if (d === null) return { label: 'Missing', tone: 'missing', days: null, sort: 3 };
@@ -164,10 +207,11 @@ const normaliseInvoiceStatus = (status) => {
 async function syncSnapshot(payload, user) {
   if (!supabase) return { ok: false, message: 'Supabase is not configured.' };
   if (!user?.id) return { ok: false, message: 'Please sign in first.' };
+  const safePayload = normalisePayload(payload);
   const { error } = await supabase.from('app_snapshots').upsert({
     id: user.id,
     user_id: user.id,
-    payload,
+    payload: safePayload,
     updated_at: new Date().toISOString(),
   });
   return error ? { ok: false, message: error.message } : { ok: true, message: 'Cloud sync complete.' };
@@ -208,6 +252,9 @@ export default function App() {
   const autoSyncTimer = useRef(null);
   const lastCloudSnapshotRef = useRef('');
   const lastLocalSnapshotRef = useRef('');
+  const lastSectionSnapshotsRef = useRef({});
+  const sectionUpdatedAtRef = useRef({});
+  const skipNextAutoSyncRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -224,8 +271,22 @@ export default function App() {
 
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
+  const updateSectionTracking = (data, { stampChanges = false } = {}) => {
+    const clean = stripMeta(data);
+    const now = new Date().toISOString();
+    SECTION_KEYS.forEach(section => {
+      const serial = JSON.stringify(clean[section]);
+      if (lastSectionSnapshotsRef.current[section] !== serial) {
+        if (stampChanges) sectionUpdatedAtRef.current[section] = now;
+        lastSectionSnapshotsRef.current[section] = serial;
+      }
+    });
+  };
+
   const applyPayload = (d) => {
     const next = normalisePayload(d);
+    sectionUpdatedAtRef.current = { ...(next._meta?.sectionsUpdatedAt || sectionUpdatedAtRef.current) };
+    updateSectionTracking(next, { stampChanges: false });
     setBusiness(next.business);
     setClients(next.clients);
     setInvoices(next.invoices);
@@ -233,8 +294,13 @@ export default function App() {
     setWorkers(next.workers);
   };
 
-  const currentPayload = () => normalisePayload({ business, clients, invoices, transactions, workers });
+  const currentPayload = () => normalisePayload({ business, clients, invoices, transactions, workers, _meta: { sectionsUpdatedAt: sectionUpdatedAtRef.current } });
   const serialisePayload = (data) => JSON.stringify(normalisePayload(data || currentPayload()));
+  const payloadWithFreshMeta = () => {
+    const data = currentPayload();
+    updateSectionTracking(data, { stampChanges: !cloudLoading });
+    return normalisePayload({ ...stripMeta(data), _meta: { sectionsUpdatedAt: sectionUpdatedAtRef.current } });
+  };
 
   useEffect(() => {
     if (authLoading || !user?.id) return;
@@ -242,9 +308,9 @@ export default function App() {
     try {
       const raw = localStorage.getItem(storageKeyFor(user));
       if (raw) applyPayload(JSON.parse(raw));
-      else applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [] });
+      else applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], _meta: { sectionsUpdatedAt: {} } });
     } catch {
-      applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [] });
+      applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], _meta: { sectionsUpdatedAt: {} } });
     } finally {
       setStorageLoaded(true);
     }
@@ -252,7 +318,8 @@ export default function App() {
 
   useEffect(() => {
     if (!storageLoaded || !user?.id) return;
-    const snapshot = serialisePayload(currentPayload());
+    const data = payloadWithFreshMeta();
+    const snapshot = serialisePayload(data);
     if (snapshot === lastLocalSnapshotRef.current) return;
     lastLocalSnapshotRef.current = snapshot;
     localStorage.setItem(storageKeyFor(user), snapshot);
@@ -260,8 +327,13 @@ export default function App() {
 
   useEffect(() => {
     if (!storageLoaded || !cloudChecked || cloudLoading || !user?.id || !supabase) return;
-    const data = currentPayload();
+    const data = payloadWithFreshMeta();
     const snapshot = serialisePayload(data);
+    if (skipNextAutoSyncRef.current) {
+      skipNextAutoSyncRef.current = false;
+      lastCloudSnapshotRef.current = snapshot;
+      return;
+    }
     if (snapshot === lastCloudSnapshotRef.current) return;
     clearTimeout(autoSyncTimer.current);
     autoSyncTimer.current = setTimeout(async () => {
@@ -277,11 +349,12 @@ export default function App() {
     try {
       const r = await loadSnapshot(user);
       if (r.ok && r.payload) {
-        const nextPayload = normalisePayload(r.payload);
+        const nextPayload = mergePayloads(payloadWithFreshMeta(), r.payload);
         lastCloudSnapshotRef.current = serialisePayload(nextPayload);
         lastLocalSnapshotRef.current = '';
         applyPayload(nextPayload);
-        if (!silent) showNotice('Cloud data loaded.');
+        if (serialisePayload(nextPayload) !== serialisePayload(r.payload)) syncSnapshot(nextPayload, user).catch(() => {});
+        if (!silent) showNotice('Cloud data merged safely.');
       } else if (!silent) {
         showNotice(r.message || 'No cloud data found yet.');
       }
@@ -299,10 +372,12 @@ export default function App() {
     loadSnapshot(user).then((r) => {
       if (cancelled) return;
       if (r.ok && r.payload) {
-        const nextPayload = normalisePayload(r.payload);
+        const localPayload = payloadWithFreshMeta();
+        const nextPayload = mergePayloads(localPayload, r.payload);
         lastCloudSnapshotRef.current = serialisePayload(nextPayload);
         lastLocalSnapshotRef.current = '';
         applyPayload(nextPayload);
+        if (serialisePayload(nextPayload) !== serialisePayload(r.payload)) syncSnapshot(nextPayload, user).catch(() => {});
       }
     }).finally(() => {
       if (!cancelled) {
@@ -326,7 +401,7 @@ export default function App() {
   }, [clients, invoices, transactions]);
 
   const filteredInvoices = invoices.filter(i => `${i.invoiceNumber} ${i.clientName}`.toLowerCase().includes(query.toLowerCase())).slice(0, 6);
-  const payload = { business, clients, invoices, transactions, workers };
+  const payload = currentPayload();
   const pricingItems = useMemo(() => getActivePricingItems(business), [business]);
   const showNotice = (message) => { setNotice(message); setTimeout(() => setNotice(''), 4200); };
 
@@ -643,7 +718,7 @@ export default function App() {
       <div className="profile-card"><div className="avatar">{(user.email || 'KC').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><h2>{welcomeMessage}</h2><p>{business.name || 'Kajola Care Operations'}</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onFocus={() => setActive('Invoices')} onKeyDown={e => { if (e.key === 'Enter') setActive('Invoices'); }} onChange={e => { setQuery(e.target.value); if (active !== 'Invoices') setActive('Invoices'); }}/><kbd>⌘K</kbd></label><button className="ghost" onClick={async () => { await syncSnapshot(currentPayload(), user).catch(() => {}); await supabase.auth.signOut(); }}>Sign out</button></div></header>
+      <header className="topbar"><div><h2>{welcomeMessage}</h2><p>{business.name || 'Kajola Care Operations'}</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onFocus={() => setActive('Invoices')} onKeyDown={e => { if (e.key === 'Enter') setActive('Invoices'); }} onChange={e => { setQuery(e.target.value); if (active !== 'Invoices') setActive('Invoices'); }}/><kbd>⌘K</kbd></label><button className="ghost" onClick={async () => { await syncSnapshot(payloadWithFreshMeta(), user).catch(() => {}); await supabase.auth.signOut(); }}>Sign out</button></div></header>
       {notice && <div className="notice">{notice}</div>}
       {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} business={business} setActive={setActive}/>} 
       {active === 'Participants' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
@@ -652,7 +727,7 @@ export default function App() {
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} />}
       {active === 'Reports' && <FutureWorkspace title="Reports" description="Operational and financial reporting is planned for the next Kajola Care release." />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
-      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = currentPayload(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
+      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
     </main>
   </div>
   <MobileShell
@@ -704,7 +779,7 @@ export default function App() {
     cancelTxn={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}
     setBusiness={setBusiness}
     saveBusiness={saveBusiness}
-    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = currentPayload(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>}
+    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>}
   />
 </>;
 }
@@ -726,7 +801,7 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
   return <div className="mobile-shell">
     <header className="mobile-top">
       <div className="mobile-brand"><BrandMark compact /><div><BrandWordmark compact /><small>{business.name || 'Care • Connect • Empower'}</small></div></div>
-      <div className="mobile-top-actions"><button className="mobile-signout" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button></div>
+      <div className="mobile-top-actions"><button className="mobile-signout" onClick={async () => { await syncSnapshot(payloadWithFreshMeta(), user).catch(() => {}); await supabase.auth.signOut(); }}>Sign out</button></div>
     </header>
     <main className="mobile-main">
       {notice && <div className="notice mobile-notice">{notice}</div>}
@@ -1306,7 +1381,7 @@ function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, 
         onSave={() => saveBusiness({ ...draft, pricingItems: draft.pricingItems || DEFAULT_PRICING_ITEMS })}
       />}
     </Card>
-    <Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is tied to your signed-in account and includes your business profile and NDIS pricing table.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON<input type="file" accept="application/json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])}/></label><button className="primary" onClick={sync}>Sync to Supabase</button><button onClick={load}>Load from Supabase</button><button className="danger" onClick={clear}>Clear All Data</button></Card>
+    <Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is tied to your signed-in account and includes your full workspace. Cloud restore now safely merges with newer local changes instead of blindly replacing them.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON<input type="file" accept="application/json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])}/></label><button className="primary" onClick={sync}>Sync to Supabase</button><button onClick={load}>Load from Supabase</button><button className="danger" onClick={clear}>Clear All Data</button></Card>
     <Card title="Data Summary"><div className="mini-stats"><b>Business: {business.name || 'Not set'}</b><b>Pricing Items: {getPricingItems(business).length}</b><b>Clients: {clients.length}</b><b>Invoices: {invoices.length}</b><b>Transactions: {transactions.length}</b></div></Card>
     <Card title="Cloud Status"><p><b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b></p><p>{isSupabaseConfigured ? `Signed in as ${user?.email || 'your account'}. Your cloud snapshot is private to this login.` : 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Cloudflare Pages variables, public/supabase-config.js, or the app setup screen.'}</p><p><small>Config source: {supabaseConfigSource}</small></p><button onClick={async () => supabase && supabase.auth.signOut()}>Sign out</button></Card>
   </>;
