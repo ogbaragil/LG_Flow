@@ -1135,7 +1135,16 @@ function Clients({ clients, form, setForm, editing, save, edit, archive, del, ca
 function Invoices({ pricingItems = DEFAULT_PRICING_ITEMS, clients, invoices, form, setForm, editing, setLine, selectItem, addLine, removeLine, save, edit, del, exportPDF, onStatusChange, cancel, query = '', setQuery = () => {} }) {
   const filteredInvoices = invoices.filter(i => `${i.invoiceNumber} ${i.clientName} ${i.status || ''}`.toLowerCase().includes(String(query).toLowerCase()));
   const preview = form.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.rate || 0), 0);
-  return <><Card title={editing ? 'Edit Invoice' : 'Generate Invoice'}><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">Select active client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field type="date" label="Due Date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}/></div>{form.lines.map((line, idx) => <div className="line" key={line.id}><div className="line-head"><h4>Service Line {idx + 1}</h4><button className="danger" onClick={() => removeLine(line.id)}>Remove</button></div><div className="grid"><label><span>Support Item</span><select value={line.itemCode || line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{pricingItems.map(i => <option key={i.id || i.itemNumber} value={i.itemNumber || i.id}>{i.itemNumber ? `${i.itemNumber} — ${i.label}` : i.label}</option>)}</select></label><Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/><Field label="Unit Type" value={line.unitType} onChange={e => setLine(line.id, 'unitType', e.target.value)}/><Field type="number" step="0.01" label="Quantity" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/><Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/><Field label="Line Notes" value={line.notes || ''} onChange={e => setLine(line.id, 'notes', e.target.value)} placeholder="Optional notes for this support item" /></div><b className="subtotal">Subtotal {money(Number(line.quantity || 0) * Number(line.rate || 0))}</b></div>)}<button onClick={addLine}>+ Add Another Service</button><Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/><div className="total">Invoice total: {money(preview)}</div><button className="primary" onClick={save}>{editing ? 'Update Invoice' : 'Generate Invoice'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Invoice Register" action={<label className="inline-search"><input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)} /></label>}><Records rows={filteredInvoices} empty="No invoices created yet." render={i => <details className="invoice-tile" key={i.id}><summary><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong><span className="pill">{i.status || 'Generated'}</span></summary><p>Issue: {fmt(i.issueDate)} · Due: {fmt(i.dueDate)} · NDIS: {i.ndisNumber || '-'}</p>{i.lines.map((l, idx) => <p key={l.id || idx}>{idx + 1}. {l.itemCode ? `${l.itemCode} · ` : ''}{l.itemLabel} · {fmt(l.serviceDate)} · {l.quantity} {l.unitType} @ {money(l.rate)} = {money(l.lineTotal)}</p>)}{i.notes && <p>Notes: {i.notes}</p>}<InvoiceStatusControls invoice={i} onChange={onStatusChange} /><div className="actions"><button onClick={() => edit(i)}>Edit</button><button onClick={() => exportPDF(i)}>Export PDF</button><button className="danger" onClick={() => del(i.id)}>Delete</button></div></details>}/></Card></>;
+  return <>
+    <Card title="Invoice Overview" className="invoice-overview-card" action={`${filteredInvoices.length} invoices`}>
+      <div className="finance-summary-grid">
+        <InsightCard label="Total Invoiced" value={money(filteredInvoices.reduce((s, i) => s + Number(i.total || 0), 0))} sub="Filtered invoices" />
+        <InsightCard label="Outstanding" value={money(filteredInvoices.filter(i => !['Paid', 'Cancelled'].includes(normaliseInvoiceStatus(i.status))).reduce((s, i) => s + Number(i.total || 0), 0))} sub="Not paid or cancelled" />
+        <InsightCard label="Invoice Count" value={filteredInvoices.length} sub="Current view" />
+      </div>
+      <p>Create, review and update invoice payment status from the register below.</p>
+    </Card>
+    <Card title={editing ? 'Edit Invoice' : 'Generate Invoice'} className="invoice-form-card"><div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">Select active client</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><Field type="date" label="Due Date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))}/></div>{form.lines.map((line, idx) => <div className="line" key={line.id}><div className="line-head"><h4>Service Line {idx + 1}</h4><button className="danger" onClick={() => removeLine(line.id)}>Remove</button></div><div className="grid"><label><span>Support Item</span><select value={line.itemCode || line.itemLabel} onChange={e => selectItem(line.id, e.target.value)}>{pricingItems.map(i => <option key={i.id || i.itemNumber} value={i.itemNumber || i.id}>{i.itemNumber ? `${i.itemNumber} — ${i.label}` : i.label}</option>)}</select></label><Field type="date" label="Service Date" value={line.serviceDate} onChange={e => setLine(line.id, 'serviceDate', e.target.value)}/><Field label="Unit Type" value={line.unitType} onChange={e => setLine(line.id, 'unitType', e.target.value)}/><Field type="number" step="0.01" label="Quantity" value={line.quantity} onChange={e => setLine(line.id, 'quantity', e.target.value)}/><Field type="number" step="0.01" label="Rate" value={line.rate} onChange={e => setLine(line.id, 'rate', e.target.value)}/><Field label="Line Notes" value={line.notes || ''} onChange={e => setLine(line.id, 'notes', e.target.value)} placeholder="Optional notes for this support item" /></div><b className="subtotal">Subtotal {money(Number(line.quantity || 0) * Number(line.rate || 0))}</b></div>)}<button onClick={addLine}>+ Add Another Service</button><Field label="Notes" multiline value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}/><div className="total">Invoice total: {money(preview)}</div><button className="primary" onClick={save}>{editing ? 'Update Invoice' : 'Generate Invoice'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}</Card><Card title="Invoice Register" className="invoice-register-card" action={<label className="inline-search"><input placeholder="Search invoices..." value={query} onChange={e => setQuery(e.target.value)} /></label>}><Records rows={filteredInvoices} empty="No invoices created yet." render={i => <details className="invoice-tile" key={i.id}><summary><div><b>{i.invoiceNumber}</b><small>{i.clientName}</small></div><strong>{money(i.total)}</strong><span className="pill">{i.status || 'Generated'}</span></summary><p>Issue: {fmt(i.issueDate)} · Due: {fmt(i.dueDate)} · NDIS: {i.ndisNumber || '-'}</p>{i.lines.map((l, idx) => <p key={l.id || idx}>{idx + 1}. {l.itemCode ? `${l.itemCode} · ` : ''}{l.itemLabel} · {fmt(l.serviceDate)} · {l.quantity} {l.unitType} @ {money(l.rate)} = {money(l.lineTotal)}</p>)}{i.notes && <p>Notes: {i.notes}</p>}<InvoiceStatusControls invoice={i} onChange={onStatusChange} /><div className="actions"><button onClick={() => edit(i)}>Edit</button><button onClick={() => exportPDF(i)}>Export PDF</button><button className="danger" onClick={() => del(i.id)}>Delete</button></div></details>}/></Card></>;
 }
 
 
@@ -1158,7 +1167,7 @@ function InvoiceStatusControls({ invoice, onChange, compact = false }) {
   </div>;
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 10;
 const paginateRows = (rows, page, pageSize = PAGE_SIZE) => {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -1198,6 +1207,46 @@ function transactionReportSummary(rows = []) {
   const income = rows.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
   const expenses = rows.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount || 0), 0);
   return { income, expenses, net: income - expenses, count: rows.length };
+}
+
+
+function csvEscape(value) {
+  const text = String(value ?? '');
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadTextFile(filename, content, type = 'text/csv;charset=utf-8;') {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function exportTransactionReportCsv({ business = {}, transactions = [], period = '1m' }) {
+  const option = TRANSACTION_REPORT_PERIODS.find(p => p.key === period) || TRANSACTION_REPORT_PERIODS[0];
+  const rows = getTransactionReportRows(transactions, period);
+  const cleanFile = (value) => String(value || 'Kajola-Care').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '');
+  const txName = (t) => t.clientId === BUSINESS_TXN_CLIENT_ID ? (t.clientName || business.name || 'Business') : (t.clientName || 'No participant');
+  const headers = ['Date', 'Type', 'Description', 'Participant / Business', 'Category', 'Status', 'Invoice Number', 'Amount'];
+  const lines = [
+    headers.map(csvEscape).join(','),
+    ...rows.map(t => [
+      t.date || '',
+      t.type || '',
+      t.description || '',
+      txName(t),
+      t.category || '',
+      t.status || 'pending',
+      t.invoiceNumber || '',
+      Number(t.amount || 0).toFixed(2),
+    ].map(csvEscape).join(',')),
+  ];
+  downloadTextFile(`${cleanFile(business.name)}-transaction-report-${option.key}.csv`, lines.join('\n'));
 }
 
 function exportTransactionReportPdf({ business = {}, transactions = [], period = '1m' }) {
@@ -1327,7 +1376,7 @@ function ReportsWorkspace({ business, transactions = [], clients = [] }) {
   const summary = transactionReportSummary(rows);
   const recentRows = rows.slice(0, 12);
   return <>
-    <Card title="Reports" action="PDF exports">
+    <Card title="Reports" action="PDF & CSV exports">
       <p>Generate professional transaction reports for management records, bookkeeping and reconciliation.</p>
       <div className="report-periods">
         {TRANSACTION_REPORT_PERIODS.map(option => <button key={option.key} className={period === option.key ? 'active' : ''} onClick={() => setPeriod(option.key)}>{option.label}</button>)}
@@ -1341,7 +1390,7 @@ function ReportsWorkspace({ business, transactions = [], clients = [] }) {
         <InsightCard label="Count" value={summary.count} sub="Transactions included" />
       </div>
       <div className="report-actions">
-        <button className="primary" onClick={() => exportTransactionReportPdf({ business, transactions, period })}>Download Transaction PDF</button>
+        <div className="report-button-row"><button className="primary" onClick={() => exportTransactionReportPdf({ business, transactions, period })}>Download PDF</button><button onClick={() => exportTransactionReportCsv({ business, transactions, period })}>Download CSV</button></div>
         <small>Period: {TRANSACTION_REPORT_PERIODS.find(p => p.key === period)?.label || '1 month'}</small>
       </div>
       <div className="txn-table report-preview"><div className="txn-table-head"><span>Transaction</span><span>Participant / Category</span><span>Date</span><span>Status</span><span>Amount</span><span>Type</span></div><Records rows={recentRows} empty="No transactions found for this period." render={t => <div className="txn-row" key={t.id}><div><b>{t.description || '-'}</b><small>{t.invoiceNumber ? `Invoice ${t.invoiceNumber}` : t.type}</small></div><div><b>{t.clientId === BUSINESS_TXN_CLIENT_ID ? (t.clientName || business?.name || 'Business') : (t.clientName || 'No Participant')}</b><small>{t.category || 'General'}</small></div><time>{fmt(t.date)}</time><span className="pill">{t.status || 'pending'}</span><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><span>{t.type || '-'}</span></div>} /></div>
@@ -1362,7 +1411,15 @@ function FinanceWorkspace({ business, clients, transactions, invoices = [], form
   const businessLabel = business?.name || 'Business';
   const changeTxnType = (value) => setForm(p => ({ ...p, type: value, clientId: value === 'expense' ? p.clientId : (p.clientId === BUSINESS_TXN_CLIENT_ID ? '' : p.clientId) }));
   return <>
-    <Card title={editing ? 'Edit Billing / Outgoing' : 'New Expense or Transaction'}>
+    <Card title="Finance Overview" className="finance-overview-card" action={`${rows.length} transactions`}>
+      <div className="finance-summary-grid">
+        <InsightCard label="Income" value={money(income)} sub="Filtered register" />
+        <InsightCard label="Expenses" value={money(expenses)} sub="Filtered register" />
+        <InsightCard label="Net Position" value={money(income-expenses)} sub="Income less expenses" />
+      </div>
+      <p>Track payments, expenses and invoice-linked transactions from one clean ledger. Use filters below to narrow the register.</p>
+    </Card>
+    <Card title={editing ? 'Edit Transaction' : 'New Transaction'} className="finance-form-card">
       <div className="grid"><label><span>Client / Business</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Participant</option>{form.type === 'expense' && <option value={BUSINESS_TXN_CLIENT_ID}>{businessLabel}</option>}{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span>Type</span><select value={form.type} onChange={e => changeTxnType(e.target.value)}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div>
       <button className="primary" onClick={save}>{editing ? 'Update Transaction' : 'Save Transaction'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}
     </Card>
@@ -1374,7 +1431,7 @@ function FinanceWorkspace({ business, clients, transactions, invoices = [], form
         <select value={filters.clientId} onChange={e => setFilter('clientId', e.target.value)}><option value="all">All participants/business</option><option value="none">No participant</option><option value={BUSINESS_TXN_CLIENT_ID}>{businessLabel}</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
         <select value={filters.sort} onChange={e => setFilter('sort', e.target.value)}><option value="date_desc">Newest date first</option><option value="date_asc">Oldest date first</option><option value="amount_desc">Highest amount first</option><option value="amount_asc">Lowest amount first</option></select>
       </div>
-      <div className="mini-stats"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income-expenses)}</b></div>
+      <div className="register-summary"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income-expenses)}</b></div>
       <div className="txn-table"><div className="txn-table-head"><span>Transaction</span><span>Participant / Category</span><span>Date</span><span>Status</span><span>Amount</span><span>Actions</span></div><Records rows={pageRows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.invoiceNumber ? `Invoice ${t.invoiceNumber}` : t.type}</small></div><div><b>{t.clientId === BUSINESS_TXN_CLIENT_ID ? (t.clientName || businessLabel) : (t.clientName || 'No Participant')}</b><small>{t.category || 'General'}</small></div><time>{fmt(t.date)}</time><select className="status-select" value={t.status || 'pending'} onChange={e => updateStatus(t.id, e.target.value)}><option value="pending">pending</option><option value="paid">paid</option></select><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/></div>{rows.length > PAGE_SIZE && <Pagination page={safePage} totalPages={totalPages} onPrev={() => setPage(p => Math.max(1, p - 1))} onNext={() => setPage(p => Math.min(totalPages, p + 1))} />}</Card>
   </>;
 }
