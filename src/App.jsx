@@ -99,6 +99,21 @@ const getBusinessComplianceItems = (business) => {
     notes: item.notes || '',
   }));
 };
+const normaliseBusiness = (business = {}) => {
+  const merged = { ...EMPTY_BUSINESS, ...(business || {}) };
+  return {
+    ...merged,
+    pricingItems: getPricingItems(merged),
+    businessCompliance: getBusinessComplianceItems(merged),
+  };
+};
+const normalisePayload = (payload = {}) => ({
+  business: normaliseBusiness(payload.business || {}),
+  clients: Array.isArray(payload.clients) ? payload.clients : [],
+  invoices: Array.isArray(payload.invoices) ? payload.invoices : [],
+  transactions: Array.isArray(payload.transactions) ? payload.transactions : [],
+  workers: normaliseWorkers(payload.workers || []),
+});
 const getComplianceStatus = (dateStr) => {
   const d = daysUntil(dateStr);
   if (d === null) return { label: 'Missing', tone: 'missing', days: null, sort: 3 };
@@ -210,15 +225,16 @@ export default function App() {
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
   const applyPayload = (d) => {
-    setBusiness({ ...EMPTY_BUSINESS, ...(d?.business || {}) });
-    setClients(d?.clients || []);
-    setInvoices(d?.invoices || []);
-    setTransactions(d?.transactions || []);
-    setWorkers(normaliseWorkers(d?.workers || []));
+    const next = normalisePayload(d);
+    setBusiness(next.business);
+    setClients(next.clients);
+    setInvoices(next.invoices);
+    setTransactions(next.transactions);
+    setWorkers(next.workers);
   };
 
-  const currentPayload = () => ({ business, clients, invoices, transactions, workers });
-  const serialisePayload = (data) => JSON.stringify(data || currentPayload());
+  const currentPayload = () => normalisePayload({ business, clients, invoices, transactions, workers });
+  const serialisePayload = (data) => JSON.stringify(normalisePayload(data || currentPayload()));
 
   useEffect(() => {
     if (authLoading || !user?.id) return;
@@ -261,7 +277,7 @@ export default function App() {
     try {
       const r = await loadSnapshot(user);
       if (r.ok && r.payload) {
-        const nextPayload = { business: { ...EMPTY_BUSINESS, ...(r.payload.business || {}) }, clients: r.payload.clients || [], invoices: r.payload.invoices || [], transactions: r.payload.transactions || [], workers: normaliseWorkers(r.payload.workers || []) };
+        const nextPayload = normalisePayload(r.payload);
         lastCloudSnapshotRef.current = serialisePayload(nextPayload);
         lastLocalSnapshotRef.current = '';
         applyPayload(nextPayload);
@@ -283,7 +299,7 @@ export default function App() {
     loadSnapshot(user).then((r) => {
       if (cancelled) return;
       if (r.ok && r.payload) {
-        const nextPayload = { business: { ...EMPTY_BUSINESS, ...(r.payload.business || {}) }, clients: r.payload.clients || [], invoices: r.payload.invoices || [], transactions: r.payload.transactions || [], workers: normaliseWorkers(r.payload.workers || []) };
+        const nextPayload = normalisePayload(r.payload);
         lastCloudSnapshotRef.current = serialisePayload(nextPayload);
         lastLocalSnapshotRef.current = '';
         applyPayload(nextPayload);
@@ -605,11 +621,12 @@ export default function App() {
   const userInitial = (displayName || user?.email || 'U').slice(0, 1).toUpperCase();
 
   const backup = () => { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), data: payload }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'kajola-care-backup.json'; a.click(); };
-  const restore = async (file) => { try { const parsed = JSON.parse(await file.text()); const d = parsed.data || parsed; setBusiness({ ...EMPTY_BUSINESS, ...(d.business || {}) }); setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); setWorkers(normaliseWorkers(d.workers || [])); showNotice('Backup restored.'); } catch { alert('Invalid backup JSON.'); } };
+  const restore = async (file) => { try { const parsed = JSON.parse(await file.text()); const d = normalisePayload(parsed.data || parsed); applyPayload(d); showNotice('Backup restored.'); } catch { alert('Invalid backup JSON.'); } };
 
   const saveBusiness = (nextBusiness) => {
-    if (!nextBusiness.name.trim()) return alert('Please enter your business name.');
-    setBusiness({ ...EMPTY_BUSINESS, ...nextBusiness });
+    const next = normaliseBusiness(nextBusiness);
+    if (!next.name.trim()) return alert('Please enter your business name.');
+    setBusiness(next);
     showNotice('Business profile saved.');
   };
 
@@ -635,7 +652,7 @@ export default function App() {
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} />}
       {active === 'Reports' && <FutureWorkspace title="Reports" description="Operational and financial reporting is planned for the next Kajola Care release." />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
-      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = currentPayload(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
+      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = currentPayload(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
     </main>
   </div>
   <MobileShell
@@ -687,7 +704,7 @@ export default function App() {
     cancelTxn={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}
     setBusiness={setBusiness}
     saveBusiness={saveBusiness}
-    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(EMPTY_BUSINESS); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = currentPayload(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>}
+    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear all data?')) { setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = currentPayload(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>}
   />
 </>;
 }
@@ -1242,6 +1259,7 @@ function Pagination({ page, totalPages, onPrev, onNext }) {
 function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, invoices, transactions, backup, restore, clear, sync, load, user }) {
   const [draft, setDraft] = useState({ ...EMPTY_BUSINESS, ...business });
   const [businessOpen, setBusinessOpen] = useState(false);
+  const [pricingOpen, setPricingOpen] = useState(false);
 
   useEffect(() => {
     setDraft({ ...EMPTY_BUSINESS, ...business });
@@ -1280,11 +1298,14 @@ function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, 
         <button className="primary" onClick={() => { saveBusiness(draft); setBusinessOpen(false); }}>Save Business Profile</button>
       </>}
     </Card>
-    <NdisPricingManager
-      items={draft.pricingItems || DEFAULT_PRICING_ITEMS}
-      onChange={(nextItems) => updateDraft('pricingItems', nextItems)}
-      onSave={() => saveBusiness({ ...draft, pricingItems: draft.pricingItems || DEFAULT_PRICING_ITEMS })}
-    />
+    <Card title="NDIS Pricing Manager" action={<button type="button" className="text-link" onClick={() => setPricingOpen(open => !open)}>{pricingOpen ? 'Collapse' : 'Manage Pricing'}</button>}>
+      {!pricingOpen && <p className="muted">Pricing manager is collapsed. Open it only when reviewing or changing NDIS support items and rates.</p>}
+      {pricingOpen && <NdisPricingManager
+        items={draft.pricingItems || DEFAULT_PRICING_ITEMS}
+        onChange={(nextItems) => updateDraft('pricingItems', nextItems)}
+        onSave={() => saveBusiness({ ...draft, pricingItems: draft.pricingItems || DEFAULT_PRICING_ITEMS })}
+      />}
+    </Card>
     <Card title="Backup, Restore & Cloud Sync"><p>Works offline with local storage. Supabase sync is tied to your signed-in account and includes your business profile and NDIS pricing table.</p><button onClick={backup}>Export Backup JSON</button><label className="file">Import Backup JSON<input type="file" accept="application/json" onChange={e => e.target.files?.[0] && restore(e.target.files[0])}/></label><button className="primary" onClick={sync}>Sync to Supabase</button><button onClick={load}>Load from Supabase</button><button className="danger" onClick={clear}>Clear All Data</button></Card>
     <Card title="Data Summary"><div className="mini-stats"><b>Business: {business.name || 'Not set'}</b><b>Pricing Items: {getPricingItems(business).length}</b><b>Clients: {clients.length}</b><b>Invoices: {invoices.length}</b><b>Transactions: {transactions.length}</b></div></Card>
     <Card title="Cloud Status"><p><b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b></p><p>{isSupabaseConfigured ? `Signed in as ${user?.email || 'your account'}. Your cloud snapshot is private to this login.` : 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Cloudflare Pages variables, public/supabase-config.js, or the app setup screen.'}</p><p><small>Config source: {supabaseConfigSource}</small></p><button onClick={async () => supabase && supabase.auth.signOut()}>Sign out</button></Card>
@@ -1316,7 +1337,7 @@ function NdisPricingManager({ items, onChange, onSave }) {
     onSave();
     setEditingRates(false);
   };
-  return <Card title="NDIS Pricing Manager" action={`${pricingItems.filter(i => !i.archived).length} active items`}>
+  return <div className="pricing-manager"><div className="rate-lock-note"><b>{pricingItems.filter(i => !i.archived).length} active items</b></div>
     <p>Manage support item numbers, descriptions, units and annual NDIS rates here. Rate fields are locked by default so prices are not changed by mistake. Invoice generation uses this table for future invoices.</p>
     <div className="settings-toolbar">
       <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search item number, name, group or unit" />
@@ -1347,7 +1368,7 @@ function NdisPricingManager({ items, onChange, onSave }) {
         </section>;
       })}
     </div>
-  </Card>;
+  </div>;
 }
 
 function BusinessOnboarding({ business, onSave, user, onLoadCloud, cloudLoading }) {
