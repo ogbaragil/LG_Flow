@@ -33,7 +33,7 @@ const DEFAULT_BUSINESS_COMPLIANCE = [
 const DEFAULT_WORKER_COMPLIANCE_ITEMS = [
   { key: 'passportExpiry', label: 'Current Passport' },
   { key: 'driversLicenceExpiry', label: 'Aus Drivers Licence' },
-  { key: 'visaExpiry', label: 'VISA' },
+  { key: 'visaExpiry', label: 'VISA', optional: true },
   { key: 'wwccExpiry', label: 'Working with Children Check' },
   { key: 'carInsuranceExpiry', label: 'Car Insurance' },
   { key: 'ndisWorkerScreeningExpiry', label: 'NDIS Worker Screening Check' },
@@ -43,9 +43,27 @@ const DEFAULT_WORKER_COMPLIANCE_ITEMS = [
   { key: 'complaintFeedbackExpiry', label: 'Complaint and Feedback Management' },
   { key: 'incidentManagementExpiry', label: 'Incident Management' },
   { key: 'emergencyDisasterExpiry', label: 'Emergency and Disaster Management' },
-  { key: 'ahpraRegistrationExpiry', label: 'AHPRA Registration' },
+  { key: 'ahpraRegistrationExpiry', label: 'AHPRA Registration', optional: true },
   { key: 'ndisOrientationExpiry', label: 'NDIS Worker Orientation Program' },
 ];
+
+const WORKER_COMPLIANCE_ALIASES = {
+  passportExpiry: ['currentPassportExpiry', 'passport', 'currentPassport'],
+  infectionPreventionExpiry: ['infectionPrevControlExpiry', 'infectionPreventionControlExpiry', 'infectionPrevAndControlExpiry', 'infectionControlExpiry'],
+  ahpraRegistrationExpiry: ['ahpraExpiry', 'ahpraRegistration'],
+  visaExpiry: ['visa', 'visaExpiryDate'],
+};
+const normaliseWorker = (worker = {}) => {
+  const next = { ...emptyWorker(), ...worker };
+  Object.entries(WORKER_COMPLIANCE_ALIASES).forEach(([key, aliases]) => {
+    if (!next[key]) {
+      const found = aliases.map(alias => worker?.[alias]).find(Boolean);
+      if (found) next[key] = found;
+    }
+  });
+  return next;
+};
+const normaliseWorkers = (workers = []) => Array.isArray(workers) ? workers.map(normaliseWorker) : [];
 const EMPTY_BUSINESS = {
   name: '',
   abn: '',
@@ -196,7 +214,7 @@ export default function App() {
     setClients(d?.clients || []);
     setInvoices(d?.invoices || []);
     setTransactions(d?.transactions || []);
-    setWorkers(d?.workers || []);
+    setWorkers(normaliseWorkers(d?.workers || []));
   };
 
   const currentPayload = () => ({ business, clients, invoices, transactions, workers });
@@ -208,9 +226,9 @@ export default function App() {
     try {
       const raw = localStorage.getItem(storageKeyFor(user));
       if (raw) applyPayload(JSON.parse(raw));
-      else applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [] });
+      else applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [] });
     } catch {
-      applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [] });
+      applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [] });
     } finally {
       setStorageLoaded(true);
     }
@@ -243,7 +261,7 @@ export default function App() {
     try {
       const r = await loadSnapshot(user);
       if (r.ok && r.payload) {
-        const nextPayload = { business: { ...EMPTY_BUSINESS, ...(r.payload.business || {}) }, clients: r.payload.clients || [], invoices: r.payload.invoices || [], transactions: r.payload.transactions || [], workers: r.payload.workers || [] };
+        const nextPayload = { business: { ...EMPTY_BUSINESS, ...(r.payload.business || {}) }, clients: r.payload.clients || [], invoices: r.payload.invoices || [], transactions: r.payload.transactions || [], workers: normaliseWorkers(r.payload.workers || []) };
         lastCloudSnapshotRef.current = serialisePayload(nextPayload);
         lastLocalSnapshotRef.current = '';
         applyPayload(nextPayload);
@@ -265,7 +283,7 @@ export default function App() {
     loadSnapshot(user).then((r) => {
       if (cancelled) return;
       if (r.ok && r.payload) {
-        const nextPayload = { business: { ...EMPTY_BUSINESS, ...(r.payload.business || {}) }, clients: r.payload.clients || [], invoices: r.payload.invoices || [], transactions: r.payload.transactions || [], workers: r.payload.workers || [] };
+        const nextPayload = { business: { ...EMPTY_BUSINESS, ...(r.payload.business || {}) }, clients: r.payload.clients || [], invoices: r.payload.invoices || [], transactions: r.payload.transactions || [], workers: normaliseWorkers(r.payload.workers || []) };
         lastCloudSnapshotRef.current = serialisePayload(nextPayload);
         lastLocalSnapshotRef.current = '';
         applyPayload(nextPayload);
@@ -574,6 +592,10 @@ export default function App() {
     setTxnForm(emptyTxn); setEditingTxn(null); showNotice('Transaction saved.');
   };
   const editTxn = (t) => { setTxnForm({ clientId: t.clientId || '', type: t.type || 'expense', status: t.status || 'paid', category: t.category || '', description: t.description || '', amount: String(t.amount || ''), date: t.date || todayISO() }); setEditingTxn(t.id); setActive('Finance'); window.scrollTo(0, 0); };
+  const updateTxnStatus = (id, status) => {
+    setTransactions(prev => prev.map(t => t.id === id ? { ...t, status, updatedAt: new Date().toISOString() } : t));
+    showNotice('Transaction status saved.');
+  };
 
   if (authLoading) return <LoadingScreen />;
   if (!user) return <AuthGate />;
@@ -583,7 +605,7 @@ export default function App() {
   const userInitial = (displayName || user?.email || 'U').slice(0, 1).toUpperCase();
 
   const backup = () => { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), data: payload }, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'kajola-care-backup.json'; a.click(); };
-  const restore = async (file) => { try { const parsed = JSON.parse(await file.text()); const d = parsed.data || parsed; setBusiness({ ...EMPTY_BUSINESS, ...(d.business || {}) }); setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); setWorkers(d.workers || []); showNotice('Backup restored.'); } catch { alert('Invalid backup JSON.'); } };
+  const restore = async (file) => { try { const parsed = JSON.parse(await file.text()); const d = parsed.data || parsed; setBusiness({ ...EMPTY_BUSINESS, ...(d.business || {}) }); setClients(d.clients || []); setInvoices(d.invoices || []); setTransactions(d.transactions || []); setWorkers(normaliseWorkers(d.workers || [])); showNotice('Backup restored.'); } catch { alert('Invalid backup JSON.'); } };
 
   const saveBusiness = (nextBusiness) => {
     if (!nextBusiness.name.trim()) return alert('Please enter your business name.');
@@ -609,7 +631,7 @@ export default function App() {
       {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} business={business} setActive={setActive}/>} 
       {active === 'Participants' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
       {active === 'Invoices' && <Invoices pricingItems={pricingItems} clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} query={query} setQuery={setQuery} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
-      {active === 'Finance' && <FinanceWorkspace clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
+      {active === 'Finance' && <FinanceWorkspace clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} updateStatus={updateTxnStatus} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} />}
       {active === 'Reports' && <FutureWorkspace title="Reports" description="Operational and financial reporting is planned for the next Kajola Care release." />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
@@ -951,11 +973,12 @@ function buildBusinessComplianceRows(business) {
 
 function buildWorkerComplianceRows(workers = []) {
   return workers.map(worker => {
-    const items = DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => ({
-      ...item,
-      date: worker[item.key] || '',
-      status: getComplianceStatus(worker[item.key] || ''),
-    }));
+    const normalisedWorker = normaliseWorker(worker);
+    const items = DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => {
+      const date = normalisedWorker[item.key] || '';
+      const status = item.optional && !date ? { label: 'Optional', tone: 'current', days: null, sort: 2 } : getComplianceStatus(date);
+      return { ...item, date, status };
+    });
     const worst = [...items].sort((a, b) => a.status.sort - b.status.sort)[0]?.status || getComplianceStatus('');
     return { worker, items, overall: worst };
   });
@@ -1055,7 +1078,7 @@ const paginateRows = (rows, page, pageSize = PAGE_SIZE) => {
   return { totalPages, safePage, start, pageRows: rows.slice(start, start + pageSize) };
 };
 
-function FinanceWorkspace({ clients, transactions, invoices = [], form, setForm, editing, save, edit, del, cancel }) {
+function FinanceWorkspace({ clients, transactions, invoices = [], form, setForm, editing, save, edit, updateStatus = () => {}, del, cancel }) {
   const [filters, setFilters] = useState({ type: 'all', status: 'all', clientId: 'all', sort: 'date_desc', query: '' });
   const [page, setPage] = useState(1);
   const rows = filterAndSortTransactions(transactions, filters);
@@ -1079,7 +1102,7 @@ function FinanceWorkspace({ clients, transactions, invoices = [], form, setForm,
         <select value={filters.sort} onChange={e => setFilter('sort', e.target.value)}><option value="date_desc">Newest date first</option><option value="date_asc">Oldest date first</option><option value="amount_desc">Highest amount first</option><option value="amount_asc">Lowest amount first</option></select>
       </div>
       <div className="mini-stats"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income-expenses)}</b></div>
-      <div className="txn-table"><div className="txn-table-head"><span>Transaction</span><span>Participant / Category</span><span>Date</span><span>Status</span><span>Amount</span><span>Actions</span></div><Records rows={pageRows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.invoiceNumber ? `Invoice ${t.invoiceNumber}` : t.type}</small></div><div><b>{t.clientName || 'No Participant'}</b><small>{t.category || 'General'}</small></div><time>{fmt(t.date)}</time><span className="pill">{t.status}</span><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/></div>{rows.length > PAGE_SIZE && <Pagination page={safePage} totalPages={totalPages} onPrev={() => setPage(p => Math.max(1, p - 1))} onNext={() => setPage(p => Math.min(totalPages, p + 1))} />}</Card>
+      <div className="txn-table"><div className="txn-table-head"><span>Transaction</span><span>Participant / Category</span><span>Date</span><span>Status</span><span>Amount</span><span>Actions</span></div><Records rows={pageRows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.invoiceNumber ? `Invoice ${t.invoiceNumber}` : t.type}</small></div><div><b>{t.clientName || 'No Participant'}</b><small>{t.category || 'General'}</small></div><time>{fmt(t.date)}</time><select className="status-select" value={t.status || 'pending'} onChange={e => updateStatus(t.id, e.target.value)}><option value="pending">pending</option><option value="paid">paid</option></select><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/></div>{rows.length > PAGE_SIZE && <Pagination page={safePage} totalPages={totalPages} onPrev={() => setPage(p => Math.max(1, p - 1))} onNext={() => setPage(p => Math.min(totalPages, p + 1))} />}</Card>
   </>;
 }
 
@@ -1087,6 +1110,7 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
   const [section, setSection] = useState('Employees');
   const [workerDraft, setWorkerDraft] = useState(emptyWorker());
   const [editingWorkerId, setEditingWorkerId] = useState(null);
+  const [workerFormOpen, setWorkerFormOpen] = useState(false);
   const items = getComplianceItems({ clients, invoices, totals, business, workers });
   const participantRows = buildParticipantComplianceRows(clients);
   const businessRows = buildBusinessComplianceRows(business);
@@ -1110,15 +1134,18 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
   const saveCompliance = () => saveBusiness({ ...EMPTY_BUSINESS, ...business, businessCompliance: getBusinessComplianceItems(business) });
   const saveWorker = () => {
     if (!workerDraft.name.trim()) return alert('Please enter the worker name.');
-    if (editingWorkerId) setWorkers(prev => prev.map(w => w.id === editingWorkerId ? { ...workerDraft, id: editingWorkerId, updatedAt: new Date().toISOString() } : w));
-    else setWorkers(prev => [{ ...workerDraft, id: workerDraft.id || makeId('worker'), createdAt: new Date().toISOString() }, ...prev]);
+    const savedWorker = normaliseWorker(workerDraft);
+    if (editingWorkerId) setWorkers(prev => prev.map(w => w.id === editingWorkerId ? { ...savedWorker, id: editingWorkerId, updatedAt: new Date().toISOString() } : w));
+    else setWorkers(prev => [{ ...savedWorker, id: savedWorker.id || makeId('worker'), createdAt: new Date().toISOString() }, ...prev]);
     setWorkerDraft(emptyWorker());
     setEditingWorkerId(null);
+    setWorkerFormOpen(false);
   };
   const editWorker = (worker) => {
-    setWorkerDraft({ ...emptyWorker(), ...worker });
+    setWorkerDraft(normaliseWorker(worker));
     setEditingWorkerId(worker.id);
     setSection('Employees');
+    setWorkerFormOpen(true);
     window.scrollTo(0, 0);
   };
   const deleteWorker = (id) => {
@@ -1140,20 +1167,23 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
     </Card>
 
     {section === 'Employees' && <>
-      <Card title={editingWorkerId ? 'Edit Worker' : 'Add Worker'} action={`${workers.length} workers`}>
-        <div className="grid">
-          <Field label="Worker Name" value={workerDraft.name} onChange={e => updateWorkerDraft('name', e.target.value)} />
-          <Field label="Role" value={workerDraft.role} onChange={e => updateWorkerDraft('role', e.target.value)} />
-          <Field label="Email" type="email" value={workerDraft.email} onChange={e => updateWorkerDraft('email', e.target.value)} />
-          <Field label="Phone" value={workerDraft.phone} onChange={e => updateWorkerDraft('phone', e.target.value)} />
-        </div>
-        <h4 className="section-label">Worker compliance dates</h4>
-        <div className="grid">
-          {DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => <Field key={item.key} type="date" label={item.label} value={workerDraft[item.key] || ''} onChange={e => updateWorkerDraft(item.key, e.target.value)} />)}
-          <Field label="Notes" multiline value={workerDraft.notes || ''} onChange={e => updateWorkerDraft('notes', e.target.value)} />
-        </div>
-        <button className="primary" onClick={saveWorker}>{editingWorkerId ? 'Update Worker' : 'Save Worker'}</button>
-        {editingWorkerId && <button onClick={() => { setWorkerDraft(emptyWorker()); setEditingWorkerId(null); }}>Cancel Edit</button>}
+      <Card title={editingWorkerId ? 'Edit Worker' : 'Add Worker'} action={<button type="button" className="text-link" onClick={() => setWorkerFormOpen(open => !open)}>{workerFormOpen ? 'Collapse' : '+ Add Worker'}</button>}>
+        {!workerFormOpen && <p className="muted">Worker form is collapsed. Open it only when adding or editing an employee.</p>}
+        {workerFormOpen && <>
+          <div className="grid">
+            <Field label="Worker Name" value={workerDraft.name} onChange={e => updateWorkerDraft('name', e.target.value)} />
+            <Field label="Role" value={workerDraft.role} onChange={e => updateWorkerDraft('role', e.target.value)} />
+            <Field label="Email" type="email" value={workerDraft.email} onChange={e => updateWorkerDraft('email', e.target.value)} />
+            <Field label="Phone" value={workerDraft.phone} onChange={e => updateWorkerDraft('phone', e.target.value)} />
+          </div>
+          <h4 className="section-label">Worker compliance dates</h4>
+          <div className="grid">
+            {DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => <Field key={item.key} type="date" label={`${item.label}${item.optional ? ' (optional)' : ''}`} value={workerDraft[item.key] || ''} onChange={e => updateWorkerDraft(item.key, e.target.value)} />)}
+            <Field label="Notes" multiline value={workerDraft.notes || ''} onChange={e => updateWorkerDraft('notes', e.target.value)} />
+          </div>
+          <button className="primary" onClick={saveWorker}>{editingWorkerId ? 'Update Worker' : 'Save Worker'}</button>
+          {editingWorkerId && <button onClick={() => { setWorkerDraft(emptyWorker()); setEditingWorkerId(null); setWorkerFormOpen(false); }}>Cancel Edit</button>}
+        </>}
       </Card>
       <Card title="Employees Compliance Register">
         <div className="client-table compliance-register"><div className="client-table-head"><span>Worker</span><span>Role</span><span>Critical Status</span><span>Due / Missing Items</span><span>Actions</span></div>
