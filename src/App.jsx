@@ -63,7 +63,7 @@ const normaliseWorker = (worker = {}) => {
   });
   return next;
 };
-const normaliseWorkers = (workers = []) => Array.isArray(workers) ? workers.map(normaliseWorker) : [];
+const normaliseWorkers = (workers = []) => Array.isArray(workers) ? workers.map(normaliseWorker).filter(worker => !isLegacyTemplateWorker(worker)) : [];
 const EMPTY_BUSINESS = {
   name: '',
   abn: '',
@@ -125,14 +125,18 @@ const normaliseMeta = (payload = {}) => ({
   schemaVersion: 2,
   sectionsUpdatedAt: { ...(payload._meta?.sectionsUpdatedAt || {}) },
 });
-const normalisePayload = (payload = {}) => ({
-  business: normaliseBusiness(payload.business || {}),
-  clients: Array.isArray(payload.clients) ? payload.clients : [],
-  invoices: Array.isArray(payload.invoices) ? payload.invoices : [],
-  transactions: Array.isArray(payload.transactions) ? payload.transactions : [],
-  workers: normaliseWorkers(payload.workers || []),
-  _meta: normaliseMeta(payload),
-});
+const normaliseTransactions = (transactions = [], business = {}) => Array.isArray(transactions) ? transactions.map(txn => (txn?.clientId === BUSINESS_TXN_CLIENT_ID ? { ...txn, clientName: txn.clientName || business?.name || 'Business' } : txn)) : [];
+const normalisePayload = (payload = {}) => {
+  const normalisedBusiness = normaliseBusiness(payload.business || {});
+  return {
+    business: normalisedBusiness,
+    clients: Array.isArray(payload.clients) ? payload.clients : [],
+    invoices: Array.isArray(payload.invoices) ? payload.invoices : [],
+    transactions: normaliseTransactions(payload.transactions, normalisedBusiness),
+    workers: normaliseWorkers(payload.workers || []),
+    _meta: normaliseMeta(payload),
+  };
+};
 const stripMeta = (payload = {}) => {
   const p = normalisePayload(payload);
   return { business: p.business, clients: p.clients, invoices: p.invoices, transactions: p.transactions, workers: p.workers };
@@ -197,6 +201,24 @@ const emptyInvoice = () => ({ clientId: '', dueDate: addDaysISO(7), notes: '', l
 const emptyTxn = { clientId: '', type: 'expense', status: 'pending', category: '', description: '', amount: '', date: todayISO() };
 const emptyWorker = () => Object.fromEntries([['id', makeId('worker')], ['name', ''], ['role', ''], ['email', ''], ['phone', ''], ['notes', ''], ...DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => [item.key, ''])]);
 const INVOICE_STATUSES = ['Draft', 'Pending', 'Paid', 'Cancelled'];
+const BUSINESS_TXN_CLIENT_ID = '__business__';
+const LEGACY_WORKER_TEMPLATE_NAMES = new Set([
+  ...DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => item.label.toLowerCase()),
+  'infection control',
+  'infection prevention and control',
+  'manual handling',
+  'medication training',
+  'police check',
+  'worker screening',
+  'working with children check',
+]);
+const hasWorkerComplianceData = (worker = {}) => DEFAULT_WORKER_COMPLIANCE_ITEMS.some(item => Boolean(worker?.[item.key]));
+const isLegacyTemplateWorker = (worker = {}) => {
+  const name = String(worker?.name || '').trim().toLowerCase();
+  if (!name || !LEGACY_WORKER_TEMPLATE_NAMES.has(name)) return false;
+  const hasProfile = ['role', 'email', 'phone', 'notes'].some(key => String(worker?.[key] || '').trim());
+  return !hasProfile && !hasWorkerComplianceData(worker);
+};
 const normaliseInvoiceStatus = (status) => {
   const value = String(status || '').toLowerCase();
   if (value === 'paid') return 'Paid';
@@ -676,8 +698,14 @@ export default function App() {
   const saveTxn = () => {
     const amount = Number(txnForm.amount);
     if (!txnForm.description.trim() || !amount || amount <= 0) return alert('Enter a description and amount greater than zero.');
+    const isBusinessExpense = txnForm.type === 'expense' && txnForm.clientId === BUSINESS_TXN_CLIENT_ID;
     const client = clients.find(c => c.id === txnForm.clientId);
-    const data = { ...txnForm, amount, clientName: client?.name || '' };
+    const data = {
+      ...txnForm,
+      amount,
+      clientId: isBusinessExpense ? BUSINESS_TXN_CLIENT_ID : (client?.id || ''),
+      clientName: isBusinessExpense ? (business.name || 'Business') : (client?.name || ''),
+    };
     if (editingTxn) setTransactions(prev => prev.map(t => t.id === editingTxn ? { ...t, ...data, updatedAt: new Date().toISOString() } : t));
     else setTransactions(prev => [{ id: makeId('txn'), ...data, createdAt: new Date().toISOString() }, ...prev]);
     setTxnForm(emptyTxn); setEditingTxn(null); showNotice('Transaction saved.');
@@ -723,7 +751,7 @@ export default function App() {
       {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} business={business} setActive={setActive}/>} 
       {active === 'Participants' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
       {active === 'Invoices' && <Invoices pricingItems={pricingItems} clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} query={query} setQuery={setQuery} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
-      {active === 'Finance' && <FinanceWorkspace clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} updateStatus={updateTxnStatus} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
+      {active === 'Finance' && <FinanceWorkspace business={business} clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} updateStatus={updateTxnStatus} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} />}
       {active === 'Reports' && <FutureWorkspace title="Reports" description="Operational and financial reporting is planned for the next Kajola Care release." />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
@@ -749,6 +777,7 @@ export default function App() {
     user={user}
     theme={theme}
     toggleTheme={toggleTheme}
+    onSignOut={async () => { await syncSnapshot(payloadWithFreshMeta(), user).catch(() => {}); await supabase.auth.signOut(); }}
     clientForm={clientForm}
     setClientForm={setClientForm}
     editingClient={editingClient}
@@ -792,7 +821,7 @@ function BrandMark({ compact = false }) {
   return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/icons/kajola-care-logo.png" alt="Kajola Care" /></div>;
 }
 
-function MobileShell({ active, setActive, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, notice, query, setQuery, user, theme, toggleTheme, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+function MobileShell({ active, setActive, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, notice, query, setQuery, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
     const activeClients = clients.filter(c => !c.archived);
   const alerts = getMobileAlerts({ clients, invoices, totals });
@@ -801,14 +830,14 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
   return <div className="mobile-shell">
     <header className="mobile-top">
       <div className="mobile-brand"><BrandMark compact /><div><BrandWordmark compact /><small>{business.name || 'Care • Connect • Empower'}</small></div></div>
-      <div className="mobile-top-actions"><button className="mobile-signout" onClick={async () => { await syncSnapshot(payloadWithFreshMeta(), user).catch(() => {}); await supabase.auth.signOut(); }}>Sign out</button></div>
+      <div className="mobile-top-actions"><button className="mobile-signout" onClick={onSignOut}>Sign out</button></div>
     </header>
     <main className="mobile-main">
       {notice && <div className="notice mobile-notice">{notice}</div>}
       {active === 'Dashboard' && <MobileHome welcomeMessage={welcomeMessage} totals={totals} alerts={alerts} invoices={recentInvoices} clients={activeClients} setActive={setActive} />}
       {active === 'Participants' && <MobileParticipants clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={cancelClient} />}
       {active === 'Invoices' && <MobileInvoices pricingItems={pricingItems} clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={cancelInvoice} query={query} setQuery={setQuery} />}
-      {active === 'Finance' && <MobileFinance clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
+      {active === 'Finance' && <MobileFinance business={business} clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} />}
       {active === 'Reports' && <FutureWorkspace title="Reports" description="Operational and financial reporting is planned for the next Kajola Care release." />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
@@ -923,7 +952,7 @@ function filterAndSortTransactions(transactions, filters) {
     });
 }
 
-function MobileFinance({ clients, transactions, form, setForm, editing, save, edit, del, cancel }) {
+function MobileFinance({ business, clients, transactions, form, setForm, editing, save, edit, del, cancel }) {
   const [filters, setFilters] = useState({ type: 'all', status: 'all', clientId: 'all', sort: 'date_desc', query: '' });
   const [page, setPage] = useState(1);
   const rows = filterAndSortTransactions(transactions, filters);
@@ -932,12 +961,14 @@ function MobileFinance({ clients, transactions, form, setForm, editing, save, ed
   const income = rows.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount||0),0);
   const expenses = rows.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount||0),0);
   const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
+  const businessLabel = business?.name || 'Business';
+  const changeTxnType = (value) => setForm(p => ({ ...p, type: value, clientId: value === 'expense' ? p.clientId : (p.clientId === BUSINESS_TXN_CLIENT_ID ? '' : p.clientId) }));
   return <section className="mobile-page">
     <div className="mobile-title"><h2>Finance</h2><span>{money(income-expenses)} net</span></div>
     <div className="mobile-kpis two"><MiniKpi label="Income" value={money(income)} /><MiniKpi label="Expenses" value={money(expenses)} /></div>
     <MobilePanel title={editing ? 'Edit transaction' : 'New transaction'}>
-      <label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Participant</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-      <div className="mobile-two"><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label></div>
+      <label><span>Client / Business</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Participant</option>{form.type === 'expense' && <option value={BUSINESS_TXN_CLIENT_ID}>{businessLabel}</option>}{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+      <div className="mobile-two"><label><span>Type</span><select value={form.type} onChange={e => changeTxnType(e.target.value)}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label></div>
       <Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><div className="mobile-two"><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div><button className="primary" onClick={save}>{editing ? 'Update transaction' : 'Save transaction'}</button>{editing && <button onClick={cancel}>Cancel</button>}
     </MobilePanel>
     <MobilePanel title="Transaction filters" action={`${rows.length} shown`}>
@@ -947,11 +978,11 @@ function MobileFinance({ clients, transactions, form, setForm, editing, save, ed
         <label><span>Status</span><select value={filters.status} onChange={e => setFilter('status', e.target.value)}><option value="all">All</option><option value="pending">Pending</option><option value="paid">Paid</option></select></label>
       </div>
       <div className="mobile-two">
-        <label><span>Client</span><select value={filters.clientId} onChange={e => setFilter('clientId', e.target.value)}><option value="all">All participants</option><option value="none">No participant</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <label><span>Client</span><select value={filters.clientId} onChange={e => setFilter('clientId', e.target.value)}><option value="all">All participants/business</option><option value="none">No participant</option><option value={BUSINESS_TXN_CLIENT_ID}>{businessLabel}</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <label><span>Sort</span><select value={filters.sort} onChange={e => setFilter('sort', e.target.value)}><option value="date_desc">Newest date</option><option value="date_asc">Oldest date</option><option value="amount_desc">Highest amount</option><option value="amount_asc">Lowest amount</option></select></label>
       </div>
     </MobilePanel>
-    <MobilePanel title="Transactions" action={`${rows.length ? start + 1 : 0}-${Math.min(start + PAGE_SIZE, rows.length)} of ${rows.length}`}><Records rows={pageRows} empty="No matching transactions found." render={t => <div className="mobile-list-row" key={t.id}><div><b>{t.description}</b><small>{t.clientName || 'No participant'} · {t.category || 'General'} · {fmt(t.date)} · {(t.status || 'paid')}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>} />{rows.length > PAGE_SIZE && <Pagination page={safePage} totalPages={totalPages} onPrev={() => setPage(p => Math.max(1, p - 1))} onNext={() => setPage(p => Math.min(totalPages, p + 1))} />}</MobilePanel>
+    <MobilePanel title="Transactions" action={`${rows.length ? start + 1 : 0}-${Math.min(start + PAGE_SIZE, rows.length)} of ${rows.length}`}><Records rows={pageRows} empty="No matching transactions found." render={t => <div className="mobile-list-row" key={t.id}><div><b>{t.description}</b><small>{t.clientId === BUSINESS_TXN_CLIENT_ID ? (t.clientName || businessLabel) : (t.clientName || 'No participant')} · {t.category || 'General'} · {fmt(t.date)} · {(t.status || 'paid')}</small></div><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>} />{rows.length > PAGE_SIZE && <Pagination page={safePage} totalPages={totalPages} onPrev={() => setPage(p => Math.max(1, p - 1))} onNext={() => setPage(p => Math.min(totalPages, p + 1))} />}</MobilePanel>
   </section>;
 }
 
@@ -1170,7 +1201,7 @@ const paginateRows = (rows, page, pageSize = PAGE_SIZE) => {
   return { totalPages, safePage, start, pageRows: rows.slice(start, start + pageSize) };
 };
 
-function FinanceWorkspace({ clients, transactions, invoices = [], form, setForm, editing, save, edit, updateStatus = () => {}, del, cancel }) {
+function FinanceWorkspace({ business, clients, transactions, invoices = [], form, setForm, editing, save, edit, updateStatus = () => {}, del, cancel }) {
   const [filters, setFilters] = useState({ type: 'all', status: 'all', clientId: 'all', sort: 'date_desc', query: '' });
   const [page, setPage] = useState(1);
   const rows = filterAndSortTransactions(transactions, filters);
@@ -1179,10 +1210,12 @@ function FinanceWorkspace({ clients, transactions, invoices = [], form, setForm,
   const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
   const income = rows.filter(t => t.type === 'income').reduce((s,t)=>s+Number(t.amount || 0),0);
   const expenses = rows.filter(t => t.type === 'expense').reduce((s,t)=>s+Number(t.amount || 0),0);
+  const businessLabel = business?.name || 'Business';
+  const changeTxnType = (value) => setForm(p => ({ ...p, type: value, clientId: value === 'expense' ? p.clientId : (p.clientId === BUSINESS_TXN_CLIENT_ID ? '' : p.clientId) }));
   return <>
     <div className="finance-tabs"><span className="active">Transactions</span><span>Expenses</span><span>Invoice Sync</span></div>
     <Card title={editing ? 'Edit Billing / Outgoing' : 'New Expense or Transaction'}>
-      <div className="grid"><label><span>Client</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Participant</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span>Type</span><select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div>
+      <div className="grid"><label><span>Client / Business</span><select value={form.clientId} onChange={e => setForm(p => ({ ...p, clientId: e.target.value }))}><option value="">No Participant</option>{form.type === 'expense' && <option value={BUSINESS_TXN_CLIENT_ID}>{businessLabel}</option>}{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span>Type</span><select value={form.type} onChange={e => changeTxnType(e.target.value)}><option>expense</option><option>income</option></select></label><label><span>Status</span><select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}><option>pending</option><option>paid</option></select></label><Field label="Category" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}/><Field label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}/><Field type="number" step="0.01" label="Amount" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}/><Field type="date" label="Date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}/></div>
       <button className="primary" onClick={save}>{editing ? 'Update Transaction' : 'Save Transaction'}</button>{editing && <button onClick={cancel}>Cancel Edit</button>}
     </Card>
     <Card title="Transaction Register" action={`${rows.length ? start + 1 : 0}-${Math.min(start + PAGE_SIZE, rows.length)} of ${rows.length}`}>
@@ -1190,11 +1223,11 @@ function FinanceWorkspace({ clients, transactions, invoices = [], form, setForm,
         <input value={filters.query} placeholder="Search description, client, category" onChange={e => setFilter('query', e.target.value)} />
         <select value={filters.type} onChange={e => setFilter('type', e.target.value)}><option value="all">All types</option><option value="income">Income</option><option value="expense">Expense</option></select>
         <select value={filters.status} onChange={e => setFilter('status', e.target.value)}><option value="all">All statuses</option><option value="pending">Pending</option><option value="paid">Paid</option></select>
-        <select value={filters.clientId} onChange={e => setFilter('clientId', e.target.value)}><option value="all">All participants</option><option value="none">No participant</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        <select value={filters.clientId} onChange={e => setFilter('clientId', e.target.value)}><option value="all">All participants/business</option><option value="none">No participant</option><option value={BUSINESS_TXN_CLIENT_ID}>{businessLabel}</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
         <select value={filters.sort} onChange={e => setFilter('sort', e.target.value)}><option value="date_desc">Newest date first</option><option value="date_asc">Oldest date first</option><option value="amount_desc">Highest amount first</option><option value="amount_asc">Lowest amount first</option></select>
       </div>
       <div className="mini-stats"><b>Income {money(income)}</b><b>Expenses {money(expenses)}</b><b>Net {money(income-expenses)}</b></div>
-      <div className="txn-table"><div className="txn-table-head"><span>Transaction</span><span>Participant / Category</span><span>Date</span><span>Status</span><span>Amount</span><span>Actions</span></div><Records rows={pageRows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.invoiceNumber ? `Invoice ${t.invoiceNumber}` : t.type}</small></div><div><b>{t.clientName || 'No Participant'}</b><small>{t.category || 'General'}</small></div><time>{fmt(t.date)}</time><select className="status-select" value={t.status || 'pending'} onChange={e => updateStatus(t.id, e.target.value)}><option value="pending">pending</option><option value="paid">paid</option></select><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/></div>{rows.length > PAGE_SIZE && <Pagination page={safePage} totalPages={totalPages} onPrev={() => setPage(p => Math.max(1, p - 1))} onNext={() => setPage(p => Math.min(totalPages, p + 1))} />}</Card>
+      <div className="txn-table"><div className="txn-table-head"><span>Transaction</span><span>Participant / Category</span><span>Date</span><span>Status</span><span>Amount</span><span>Actions</span></div><Records rows={pageRows} empty="No matching transactions found." render={t => <div className="txn-row" key={t.id}><div><b>{t.description}</b><small>{t.invoiceNumber ? `Invoice ${t.invoiceNumber}` : t.type}</small></div><div><b>{t.clientId === BUSINESS_TXN_CLIENT_ID ? (t.clientName || businessLabel) : (t.clientName || 'No Participant')}</b><small>{t.category || 'General'}</small></div><time>{fmt(t.date)}</time><select className="status-select" value={t.status || 'pending'} onChange={e => updateStatus(t.id, e.target.value)}><option value="pending">pending</option><option value="paid">paid</option></select><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><div className="actions"><button onClick={() => edit(t)}>Edit</button><button className="danger" onClick={() => del(t.id)}>Delete</button></div></div>}/></div>{rows.length > PAGE_SIZE && <Pagination page={safePage} totalPages={totalPages} onPrev={() => setPage(p => Math.max(1, p - 1))} onNext={() => setPage(p => Math.min(totalPages, p + 1))} />}</Card>
   </>;
 }
 
