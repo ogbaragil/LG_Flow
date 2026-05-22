@@ -698,3 +698,24 @@ label span{color:#07348B!important;}
 .archived-participants summary::-webkit-details-marker{display:none}
 .archived-participants summary:after{content:'Open';float:right;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.12em}
 .archived-participants[open] summary:after{content:'Collapse'}
+
+/* Compliance report refinements */
+.compliance-report{display:grid;gap:16px;position:relative}
+.compliance-report.compact{gap:10px}
+.compliance-report-group{border:1px solid var(--line2);border-radius:18px;background:var(--panel2);overflow:hidden}
+.compliance-report-group-head{display:flex;align-items:center;gap:10px;padding:14px 16px;background:#edf4ff;color:#07348B;border-bottom:1px solid var(--line2)}
+.compliance-report-group-head span{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:#fff;color:#07348B;border:1px solid #d6e4f6}
+.compliance-report-group-head b{font-size:15px;text-transform:uppercase;letter-spacing:.08em}
+.compliance-report-group-head small{margin-left:auto;color:#516174;font-weight:800}
+.compliance-report-row{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;padding:16px;border-top:1px solid var(--line2)}
+.compliance-report-row:first-of-type{border-top:0}
+.compliance-report.compact .compliance-report-row{grid-template-columns:auto 1fr auto;border:1px solid var(--line2);border-radius:16px;background:var(--panel2);padding:13px 14px}
+.compliance-report-icon{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:#eef6ff;color:#07348B;border:1px solid #d6e4f6;font-weight:900}
+.compliance-report-main b{display:block;color:var(--text);font-size:15px;line-height:1.3}
+.compliance-report-main small{display:block;color:var(--muted);margin-top:5px;line-height:1.35}
+.compliance-report-row.overdue{box-shadow:inset 4px 0 0 #ef4444}
+.compliance-report-row.due{box-shadow:inset 4px 0 0 #facc15}
+html[data-theme="dark"] .compliance-report-group-head{background:rgba(30,58,138,.45);color:#dffdfa}
+html[data-theme="dark"] .compliance-report-group-head span,html[data-theme="dark"] .compliance-report-icon{background:rgba(15,23,42,.72);color:#dffdfa;border-color:rgba(226,232,240,.18)}
+html[data-theme="dark"] .compliance-report-group-head small{color:#cbd5e1}
+@media(max-width:720px){.compliance-report-row,.compliance-report.compact .compliance-report-row{grid-template-columns:1fr}.compliance-report-icon{display:none}.compliance-report-group-head{align-items:flex-start}.compliance-report-group-head small{margin-left:0}}

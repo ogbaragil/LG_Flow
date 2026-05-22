@@ -713,7 +713,7 @@ export default function App() {
     <main className="main">
       <header className="topbar"><div><h2>{welcomeMessage}</h2><p>{business.name || 'Kajola Care Operations'}</p></div><div className="top-actions"><label className="search">⌕<input placeholder="Search invoices..." value={query} onFocus={() => setActive('Invoices')} onKeyDown={e => { if (e.key === 'Enter') setActive('Invoices'); }} onChange={e => { setQuery(e.target.value); if (active !== 'Invoices') setActive('Invoices'); }}/><kbd>⌘K</kbd></label><button className="ghost" onClick={async () => { await supabase.auth.signOut(); }}>Sign out</button></div></header>
       {notice && <div className="notice">{notice}</div>}
-      {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} business={business} setActive={setActive}/>} 
+      {active === 'Dashboard' && <Dashboard totals={totals} invoices={filteredInvoices.length ? filteredInvoices : invoices.slice(0, 5)} transactions={transactions} clients={clients} business={business} workers={workers} setActive={setActive}/>} 
       {active === 'Participants' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
       {active === 'Invoices' && <Invoices pricingItems={pricingItems} clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} query={query} setQuery={setQuery} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Finance' && <FinanceWorkspace business={business} clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} updateStatus={updateTxnStatus} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
@@ -996,7 +996,7 @@ function CashflowOverview({ transactions }) {
   </Card>;
 }
 
-function Dashboard({ totals, invoices, transactions, clients, business, setActive }) {
+function Dashboard({ totals, invoices, transactions, clients, business, workers = [], setActive }) {
   const activeParticipants = clients.filter(c => !c.archived);
   const clientSpend = (clientId) => invoices.filter(i => i.clientId === clientId).reduce((s, i) => s + Number(i.total || 0), 0);
   const totalBudget = activeParticipants.reduce((s, c) => s + Number(c.budget || 0), 0);
@@ -1004,7 +1004,8 @@ function Dashboard({ totals, invoices, transactions, clients, business, setActiv
   const budgetPct = totalBudget ? Math.min(100, Math.round((usedBudget / totalBudget) * 100)) : 0;
   const pendingInvoices = invoices.filter(i => !['Paid', 'Cancelled'].includes(normaliseInvoiceStatus(i.status)));
   const expiringParticipants = activeParticipants.filter(c => { const d = daysUntil(c.planEndDate); return d !== null && d >= 0 && d <= 30; });
-  const complianceDue = getComplianceItems({ clients, invoices, totals, business }).length;
+  const complianceItems = getComplianceItems({ clients, invoices, totals, business, workers });
+  const complianceDue = complianceItems.length;
   const topParticipants = [...activeParticipants].sort((a, b) => clientSpend(b.id) - clientSpend(a.id)).slice(0, 5);
 
   return <>
@@ -1023,7 +1024,7 @@ function Dashboard({ totals, invoices, transactions, clients, business, setActiv
       <InsightCard label="NDIS Budget Usage" value={`${budgetPct}%`} sub={`${money(usedBudget)} used of ${money(totalBudget)}`} progress={budgetPct} />
       <InsightCard label="Plans Expiring Soon" value={expiringParticipants.length} sub="Within 30 days" />
       <InsightCard label="Pending Invoices" value={pendingInvoices.length} sub={money(pendingInvoices.reduce((s, i) => s + Number(i.total || 0), 0))} />
-      <InsightCard label="Compliance Due" value={complianceDue} sub="Items needing review" />
+      <InsightCard label="Compliance Due" value={complianceDue} sub={complianceDue ? 'Overdue or due soon' : 'All clear'} />
     </div>
     <div className="dashboard-grid">
       <CashflowOverview transactions={transactions} />
@@ -1032,7 +1033,7 @@ function Dashboard({ totals, invoices, transactions, clients, business, setActiv
     <div className="bottom-grid">
       <Card title="Participant Budget Leaders"><Records rows={topParticipants} empty="No participants yet." render={(c) => { const spent = clientSpend(c.id); const budget = Number(c.budget || 0); const pct = budget ? Math.min(100, Math.round((spent / budget) * 100)) : 0; return <div className="client-rank" key={c.id}><div className="mini-avatar">{(c.name||'P').split(' ').map(x=>x[0]).join('').slice(0,2)}</div><b>{c.name}</b><div className="bar"><span style={{width:`${pct || 6}%`}}/></div><strong>{money(spent)}</strong><small>{budget ? `${pct}% of ${money(budget)}` : 'No budget set'}</small></div>; }}/></Card>
       <Card title="Plan Watch"><Records rows={expiringParticipants.slice(0,4)} empty="No plans expiring soon." render={c => <div className="feed" key={c.id}><span>◷</span><div><b>{c.name}</b><small>{daysUntil(c.planEndDate)} days left · Ends {fmt(c.planEndDate)}</small></div><time>{money(Number(c.budget || 0))}</time></div>}/></Card>
-      <Card title="Compliance Due"><Records rows={getComplianceItems({ clients, invoices, totals, business }).slice(0,4)} empty="No compliance items due." render={item => <div className="feed" key={item.id}><span>✓</span><div><b>{item.title}</b><small>{item.detail}</small></div><time>{item.status}</time></div>}/></Card>
+      <Card title="Compliance Due" action={<button className="text-link" onClick={() => setActive('Compliance')}>View report</button>}><ComplianceItemsReport items={complianceItems.slice(0, 5)} compact empty="No compliance items due." /></Card>
     </div>
   </>;
 }
@@ -1312,8 +1313,35 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
       </div>
     </Card>}
 
-    {section === 'Items' && <Card title="Compliance Items"><Records rows={items} empty="No compliance items due." render={item => <div className="compliance-row" key={item.id}><div><b>{item.title}</b><small>{item.type} · {item.detail}</small></div><span className={`traffic-pill ${item.tone}`}>{item.status}</span></div>} /></Card>}
+    {section === 'Items' && <Card title="Compliance Items" action={`${items.length} due`}><ComplianceItemsReport items={items} empty="No compliance items due." /></Card>}
   </>;
+}
+
+function ComplianceItemsReport({ items, compact = false, empty = 'No compliance items due.' }) {
+  const grouped = items.reduce((acc, item) => {
+    const key = item.type || 'Compliance';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+  const iconFor = (type) => ({ Employee: '👤', Participant: '♙', Invoice: '$', Insurance: '☂', Audits: '✓' }[type] || '✓');
+  if (!items.length) return <p className="empty">{empty}</p>;
+  if (compact) return <div className="compliance-report compact">
+    {items.map(item => <div className={`compliance-report-row ${item.tone}`} key={item.id}>
+      <div className="compliance-report-icon">{iconFor(item.type)}</div>
+      <div className="compliance-report-main"><b>{item.title}</b><small>{item.type} · {item.detail}</small></div>
+      <span className={`traffic-pill ${item.tone}`}>{item.status}</span>
+    </div>)}
+  </div>;
+  return <div className="compliance-report">
+    {Object.entries(grouped).map(([type, rows]) => <section className="compliance-report-group" key={type}>
+      <div className="compliance-report-group-head"><span>{iconFor(type)}</span><b>{type}</b><small>{rows.length} item{rows.length === 1 ? '' : 's'}</small></div>
+      {rows.map(item => <div className={`compliance-report-row ${item.tone}`} key={item.id}>
+        <div className="compliance-report-main"><b>{item.title}</b><small>{item.detail}</small></div>
+        <span className={`traffic-pill ${item.tone}`}>{item.status}</span>
+      </div>)}
+    </section>)}
+  </div>;
 }
 
 function ComplianceDateCell({ item }) {
