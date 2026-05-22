@@ -211,7 +211,6 @@ const LEGACY_WORKER_TEMPLATE_NAMES = new Set([
   'police check',
   'worker screening',
   'working with children check',
-  'jhk',
 ]);
 const hasWorkerComplianceData = (worker = {}) => DEFAULT_WORKER_COMPLIANCE_ITEMS.some(item => Boolean(worker?.[item.key]));
 const isLegacyTemplateWorker = (worker = {}) => {
