@@ -732,12 +732,7 @@ export default function App() {
   return <><div className="shell desktop-shell">
     <aside className="sidebar">
       <div className="brand"><BrandMark /><div><BrandWordmark /><p>Care • Connect • Empower</p></div></div>
-      <nav>{TABS.map(t => t === 'Compliance' ? <div className="nav-compliance" key={t}>
-        <button className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>
-        <div className="nav-flyout" role="menu" aria-label="Compliance sections">
-          {[['Employees','Employee compliance'],['Participants','Participant compliance'],['Business','Business compliance'],['Risks','Risk register'],['Incidents','Incident register'],['Complaints','Complaints register'],['Improvements','Continuous improvement'],['Audits','Internal audits'],['Governance','Governance reviews'],['Documents','Evidence library'],['Items','Compliance items']].map(([sectionName, desc]) => <button key={sectionName} onClick={() => openComplianceSection(sectionName)}><b>{sectionName}</b><small>{desc}</small></button>)}
-        </div>
-      </div> : <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
+      <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
       <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'Manual cloud sync ready' : 'Cloud sync disabled'}</small></div>
       <div className="profile-card"><div className="avatar">{(user.email || 'KC').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
@@ -832,7 +827,7 @@ function BrandWordmark({ compact = false, hero = false }) {
 }
 
 function BrandMark({ compact = false }) {
-  return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/icons/kajola-care-logo.png" alt="Kajola Care" /></div>;
+  return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/kajola-care-logo.png" alt="Kajola Care" /></div>;
 }
 
 function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
@@ -877,31 +872,17 @@ function MobileShell({ active, setActive, complianceSection, setComplianceSectio
   </div>;
 }
 
-function MobileSideDrawer({ active, setActive, onClose, onSignOut, business, onComplianceSection }) {
-  const [complianceOpen, setComplianceOpen] = useState(false);
+function MobileSideDrawer({ active, setActive, onClose, onSignOut, business }) {
   const items = [
+    ['Compliance', '✓', 'Audit, worker and business compliance'],
     ['Reports', '▥', 'PDF and CSV exports'],
     ['Schedules', '◷', 'Rosters and appointments'],
     ['Settings', '⚙', 'Business, pricing and cloud'],
-  ];
-  const complianceSections = [
-    ['Employees', 'Worker checks and training'],
-    ['Participants', 'Plan, consent and agreement'],
-    ['Business', 'Insurance and audits'],
-    ['Items', 'Due and overdue report'],
   ];
   return <div className="mobile-drawer-backdrop" onClick={onClose}>
     <aside className="mobile-drawer" onClick={e => e.stopPropagation()}>
       <div className="mobile-drawer-head"><div><BrandMark compact /><BrandWordmark compact /></div><button onClick={onClose} aria-label="Close menu">×</button></div>
       <p>{business?.name || 'Kajola Care workspace'}</p>
-      <div className={`mobile-drawer-group ${complianceOpen ? 'open' : ''}`}>
-        <button type="button" className="mobile-drawer-toggle" onClick={() => setComplianceOpen(open => !open)} aria-expanded={complianceOpen}>
-          <span>✓</span><div><b>Compliance</b><small>Employees, participants, business and due items</small></div><strong>{complianceOpen ? '−' : '+'}</strong>
-        </button>
-        {complianceOpen && <div className="mobile-drawer-list compliance-drawer-list">
-          {complianceSections.map(([sectionName, desc]) => <button key={sectionName} className={active === 'Compliance' ? 'active-subtle' : ''} onClick={() => onComplianceSection(sectionName)}><span>✓</span><div><b>{sectionName}</b><small>{desc}</small></div></button>)}
-        </div>}
-      </div>
       <div className="mobile-drawer-list">
         {items.map(([tab, icon, desc]) => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}><span>{icon}</span><div><b>{tab}</b><small>{desc}</small></div></button>)}
       </div>
@@ -1491,15 +1472,158 @@ function downloadCsv(filename, rows, cols) {
   const blob = new Blob([csv], { type: 'text/csv' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
 }
+function drawPdfLogo(doc, business = {}, x = 14, y = 10, size = 18) {
+  const markText = (business.name || 'Kajola Care').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || 'KC';
+  if (business.logoUrl) {
+    try {
+      const imageType = String(business.logoUrl).includes('image/png') ? 'PNG' : 'JPEG';
+      doc.addImage(business.logoUrl, imageType, x, y, size, size, undefined, 'FAST');
+      return;
+    } catch (e) {
+      // Fall through to a vector monogram if the uploaded logo cannot be embedded.
+    }
+  }
+  doc.setFillColor(7, 52, 139);
+  doc.roundedRect(x, y, size, size, 4, 4, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(9);
+  doc.text(markText, x + size / 2, y + size / 2 + 3, { align: 'center' });
+}
+
+function drawProfessionalPdfHeader(doc, { business = {}, title = 'Report', subtitle = '', meta = [] } = {}) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  const right = pageWidth - margin;
+  doc.setFillColor(248, 250, 252);
+  doc.rect(0, 0, pageWidth, 42, 'F');
+  doc.setDrawColor(214, 226, 242);
+  doc.line(0, 42, pageWidth, 42);
+  drawPdfLogo(doc, business, margin, 10, 20);
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(15);
+  doc.setTextColor(15, 23, 42);
+  doc.text(safeText(business.name || 'Kajola Care'), margin + 26, 17);
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  const companyLines = [business.abn ? `ABN ${business.abn}` : '', business.address || '', [business.email, business.phone].filter(Boolean).join('  •  ')].filter(Boolean);
+  companyLines.slice(0, 3).forEach((line, idx) => doc.text(safeText(line), margin + 26, 23 + idx * 5));
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(17);
+  doc.setTextColor(7, 52, 139);
+  doc.text(safeText(title), right, 17, { align: 'right' });
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  const rightLines = [subtitle, ...meta, `Generated ${new Date().toLocaleString()}`].filter(Boolean);
+  rightLines.slice(0, 4).forEach((line, idx) => doc.text(safeText(line), right, 23 + idx * 5, { align: 'right' }));
+  return 52;
+}
+
+function drawProfessionalPdfFooter(doc, business = {}, title = 'Report') {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const right = pageWidth - margin;
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i += 1) {
+    doc.setPage(i);
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin, pageHeight - 15, right, pageHeight - 15);
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`${business.name || 'Kajola Care'} · ${title}`, margin, pageHeight - 9);
+    doc.text(`Generated by Kajola Care · Page ${i} of ${pages}`, right, pageHeight - 9, { align: 'right' });
+  }
+}
+
 function exportRegisterPdf({ business = {}, title, rows = [], cols = [] }) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const margin = 14; let y = 18; const pageWidth = doc.internal.pageSize.getWidth(); const right = pageWidth - margin;
-  const addHeader = () => { doc.setFontSize(16); doc.setFont(undefined, 'bold'); doc.text(title, margin, y); doc.setFont(undefined, 'normal'); doc.setFontSize(9); doc.text(`${business.name || 'Business'} · Generated ${fmt(todayISO())}`, margin, y + 6); y += 16; };
-  const ensure = (n=12) => { if (y + n > 282) { doc.addPage(); y = 18; addHeader(); } };
-  addHeader();
-  if (!rows.length) { doc.text('No records found.', margin, y); }
-  rows.forEach((row, idx) => { ensure(22); doc.setFont(undefined, 'bold'); doc.setFontSize(10); doc.text(`${idx + 1}. ${safeText(row.title || row.category || 'Untitled')}`, margin, y); y += 5; doc.setFont(undefined, 'normal'); doc.setFontSize(8); cols.filter(c => c !== 'title').slice(0, 10).forEach(c => { const text = `${c}: ${safeText(row[c])}`; doc.splitTextToSize(text, right - margin).slice(0,2).forEach(line => { ensure(5); doc.text(line, margin + 3, y); y += 4; }); }); y += 3; });
-  doc.save(`${cleanFile(business.name)}-${cleanFile(title)}.pdf`);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const right = pageWidth - margin;
+  let y = drawProfessionalPdfHeader(doc, { business, title, subtitle: 'Audit and compliance register', meta: [`Records: ${rows.length}`] });
+
+  const ensure = (n = 12) => {
+    if (y + n > pageHeight - 22) {
+      doc.addPage();
+      y = drawProfessionalPdfHeader(doc, { business, title, subtitle: 'Audit and compliance register', meta: [`Records: ${rows.length}`] });
+    }
+  };
+
+  const statusCounts = rows.reduce((acc, row) => {
+    const key = row.status || 'Open';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const cardW = (pageWidth - margin * 2 - 9) / 4;
+  [['Total', rows.length], ['Open', statusCounts.Open || 0], ['In Progress', statusCounts['In Progress'] || 0], ['Closed', statusCounts.Closed || 0]].forEach(([label, value], idx) => {
+    const x = margin + idx * (cardW + 3);
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(214, 226, 242);
+    doc.roundedRect(x, y, cardW, 22, 3, 3, 'FD');
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(7, 52, 139);
+    doc.text(String(label).toUpperCase(), x + 4, y + 7);
+    doc.setFontSize(13);
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(value), x + 4, y + 16);
+  });
+  y += 32;
+
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Register detail', margin, y);
+  y += 7;
+
+  if (!rows.length) {
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(margin, y, pageWidth - margin * 2, 22, 3, 3, 'FD');
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text('No records found for this register.', margin + 5, y + 13);
+  } else {
+    rows.forEach((row, idx) => {
+      const displayTitle = safeText(row.title || row.category || row.source || row.scope || 'Untitled record');
+      const details = cols.filter(c => c !== 'title').map(c => [c, row[c]]).filter(([, value]) => String(value ?? '').trim());
+      const boxHeight = Math.max(30, 18 + Math.min(details.length, 8) * 5);
+      ensure(boxHeight + 4);
+      doc.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(margin, y, pageWidth - margin * 2, boxHeight, 3, 3, 'FD');
+
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${idx + 1}. ${displayTitle}`.slice(0, 88), margin + 5, y + 8);
+      const status = row.status || 'Open';
+      const statusColor = status === 'Closed' ? [22, 101, 52] : status === 'In Progress' ? [146, 64, 14] : [153, 27, 27];
+      doc.setTextColor(...statusColor);
+      doc.setFontSize(8);
+      doc.text(status, right - 5, y + 8, { align: 'right' });
+
+      let yy = y + 15;
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      details.slice(0, 8).forEach(([key, value]) => {
+        const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
+        const text = `${label}: ${safeText(value)}`;
+        const lines = doc.splitTextToSize(text, pageWidth - margin * 2 - 12).slice(0, 2);
+        lines.forEach(line => { doc.text(line, margin + 5, yy); yy += 4.5; });
+      });
+      y += boxHeight + 4;
+    });
+  }
+  drawProfessionalPdfFooter(doc, business, title);
+  doc.save(`${cleanFile(business.name || 'kajola-care')}-${cleanFile(title)}.pdf`);
 }
 function cleanFile(value) { return String(value || 'kajola-care').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase(); }
 
@@ -1646,18 +1770,18 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
 
     {section === 'Business' && <Card title="Business Compliance" action={<button className="primary" onClick={saveCompliance}>Save Compliance</button>}><p>Maintain insurance and audit due dates for the business. Worker checks and mandatory training are managed under Employees Compliance.</p><div className="business-compliance-list">{['Insurance','Audits'].map(group => <section key={group} className="business-compliance-group"><h4>{group}</h4>{businessRows.filter(item => item.group === group).map(item => <div className="business-compliance-row" key={item.id}><label><span>Item</span><input value={item.label} onChange={e => updateBusinessCompliance(item.id, 'label', e.target.value)} /></label><label><span>Due date</span><input type="date" value={item.dueDate} onChange={e => updateBusinessCompliance(item.id, 'dueDate', e.target.value)} /></label><label><span>Notes</span><input value={item.notes || ''} onChange={e => updateBusinessCompliance(item.id, 'notes', e.target.value)} /></label><span className={`traffic-pill ${item.status.tone}`}>{item.status.label}</span></div>)}</section>)}</div></Card>}
 
-    {section === 'Risks' && <RecordRegister title="Risk Register" type="risks" rows={risks} setRows={setRisks} clients={clients} fields={['title','participantId','category','likelihood','impact','rating','treatment','owner','reviewDate','status','evidence']} />}
-    {section === 'Incidents' && <RecordRegister title="Incident Register" type="incidents" rows={incidents} setRows={setIncidents} clients={clients} fields={['title','participantId','date','severity','reportable','immediateAction','followUp','status','evidence']} />}
-    {section === 'Complaints' && <RecordRegister title="Complaints Register" type="complaints" rows={complaints} setRows={setComplaints} clients={clients} fields={['title','participantId','date','receivedBy','category','details','resolution','status','evidence']} />}
-    {section === 'Improvements' && <RecordRegister title="Continuous Improvement Register" type="improvements" rows={improvements} setRows={setImprovements} clients={clients} fields={['title','source','owner','dueDate','action','outcome','status','evidence']} />}
-    {section === 'Audits' && <RecordRegister title="Internal Audit Register" type="audits" rows={audits} setRows={setAudits} clients={clients} fields={['title','date','scope','findings','actions','status','evidence']} />}
-    {section === 'Governance' && <RecordRegister title="Governance Review Register" type="governanceReviews" rows={governanceReviews} setRows={setGovernanceReviews} clients={clients} fields={['title','date','attendees','summary','decisions','actions','nextReviewDate','status','evidence']} />}
-    {section === 'Documents' && <RecordRegister title="Evidence Library & Document Control" type="documents" rows={documents} setRows={setDocuments} clients={clients} fields={['title','category','owner','reviewDate','version','location','status','notes']} />}
+    {section === 'Risks' && <RecordRegister business={business} title="Risk Register" type="risks" rows={risks} setRows={setRisks} clients={clients} fields={['title','participantId','category','likelihood','impact','rating','treatment','owner','reviewDate','status','evidence']} />}
+    {section === 'Incidents' && <RecordRegister business={business} title="Incident Register" type="incidents" rows={incidents} setRows={setIncidents} clients={clients} fields={['title','participantId','date','severity','reportable','immediateAction','followUp','status','evidence']} />}
+    {section === 'Complaints' && <RecordRegister business={business} title="Complaints Register" type="complaints" rows={complaints} setRows={setComplaints} clients={clients} fields={['title','participantId','date','receivedBy','category','details','resolution','status','evidence']} />}
+    {section === 'Improvements' && <RecordRegister business={business} title="Continuous Improvement Register" type="improvements" rows={improvements} setRows={setImprovements} clients={clients} fields={['title','source','owner','dueDate','action','outcome','status','evidence']} />}
+    {section === 'Audits' && <RecordRegister business={business} title="Internal Audit Register" type="audits" rows={audits} setRows={setAudits} clients={clients} fields={['title','date','scope','findings','actions','status','evidence']} />}
+    {section === 'Governance' && <RecordRegister business={business} title="Governance Review Register" type="governanceReviews" rows={governanceReviews} setRows={setGovernanceReviews} clients={clients} fields={['title','date','attendees','summary','decisions','actions','nextReviewDate','status','evidence']} />}
+    {section === 'Documents' && <RecordRegister business={business} title="Evidence Library & Document Control" type="documents" rows={documents} setRows={setDocuments} clients={clients} fields={['title','category','owner','reviewDate','version','location','status','notes']} />}
     {section === 'Items' && <Card title="Compliance Items" action={`${items.length} due`}><ComplianceItemsReport items={items} empty="No compliance items due." /></Card>}
   </>;
 }
 
-function RecordRegister({ title, type, rows = [], setRows = () => {}, clients = [], fields = [] }) {
+function RecordRegister({ business = {}, title, type, rows = [], setRows = () => {}, clients = [], fields = [] }) {
   const [draft, setDraft] = useState(emptyRecordFor(type));
   const [editingId, setEditingId] = useState(null);
   const [open, setOpen] = useState(false);
@@ -1676,7 +1800,7 @@ function RecordRegister({ title, type, rows = [], setRows = () => {}, clients = 
   return <>
     <Card title={title} action={<button type="button" className="text-link" onClick={() => setOpen(v => !v)}>{open ? 'Collapse' : '+ Add Record'}</button>}>
       <div className="report-summary-grid"><InsightCard label="Total" value={rows.length} sub="Records"/><InsightCard label="Open" value={statusCounts.Open || 0} sub="Needs action"/><InsightCard label="In Progress" value={statusCounts['In Progress'] || 0} sub="Being handled"/><InsightCard label="Closed" value={statusCounts.Closed || 0} sub="Completed"/></div>
-      <div className="report-actions"><button onClick={() => exportRegisterPdf({ business: {}, title, rows: rows.map(r => withParticipantName(r, clients)), cols })}>Export PDF</button><button onClick={() => downloadCsv(`${cleanFile(title)}.csv`, rows.map(r => withParticipantName(r, clients)), cols)}>Export CSV</button></div>
+      <div className="report-actions"><button onClick={() => exportRegisterPdf({ business, title, rows: rows.map(r => withParticipantName(r, clients)), cols })}>Export PDF</button><button onClick={() => downloadCsv(`${cleanFile(title)}.csv`, rows.map(r => withParticipantName(r, clients)), cols)}>Export CSV</button></div>
       {!open && <p className="muted">Use this register during normal operations so the audit trail is ready without extra paperwork.</p>}
       {open && <div className="grid">{fields.map(field => <RegisterField key={field} field={field} value={draft[field] || ''} onChange={value => setField(field, value)} clients={clients} />)}</div>}
       {open && <><button className="primary" onClick={save}>{editingId ? 'Update Record' : 'Save Record'}</button>{editingId && <button onClick={() => { setDraft(emptyRecordFor(type)); setEditingId(null); setOpen(false); }}>Cancel Edit</button>}</>}
