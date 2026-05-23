@@ -784,10 +784,13 @@ function BrandMark({ compact = false }) {
 
 function MobileShell({ active, setActive, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
-    const activeClients = clients.filter(c => !c.archived);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const activeClients = clients.filter(c => !c.archived);
   const alerts = getMobileAlerts({ clients, invoices, totals });
   const recentInvoices = invoices.slice(0, 4);
-  const openAction = (tab) => { setFabOpen(false); setActive(tab); setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 20); };
+  const openAction = (tab) => { setFabOpen(false); setMoreOpen(false); setActive(tab); setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 20); };
+  const openMore = () => setMoreOpen(true);
+  const moreActive = ['Compliance','Reports','Schedules','Settings'].includes(active);
   return <div className="mobile-shell">
     <header className="mobile-top">
       <div className="mobile-brand"><BrandMark compact /><div><BrandWordmark compact /><small>{business.name || 'Care • Connect • Empower'}</small></div></div>
@@ -812,9 +815,30 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
       <button onClick={() => openAction('Finance')}>New expense</button>
       <button onClick={() => setFabOpen(false)}>Close</button>
     </div></div>}
+    {moreOpen && <MobileSideDrawer active={active} setActive={openAction} onClose={() => setMoreOpen(false)} onSignOut={onSignOut} business={business} />}
     <nav className="mobile-bottom">
-      {[['Dashboard','Dashboard','⌂'],['Participants','Participants','♙'],['Finance','Finance','↔'],['Settings','More','☰']].map(([tab,label,icon]) => <button key={tab} className={(active === tab || (tab === 'Settings' && ['Invoices','Compliance','Reports','Schedules','Settings'].includes(active))) ? 'active' : ''} onClick={() => setActive(tab)}><span>{icon}</span><small>{label}</small></button>)}
+      {[['Dashboard','Dashboard','⌂'],['Participants','Participants','♙'],['Invoices','Invoices','▤'],['Finance','Finance','↔']].map(([tab,label,icon]) => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => openAction(tab)}><span>{icon}</span><small>{label}</small></button>)}
+      <button className={moreActive ? 'active' : ''} onClick={openMore}><span>☰</span><small>More</small></button>
     </nav>
+  </div>;
+}
+
+function MobileSideDrawer({ active, setActive, onClose, onSignOut, business }) {
+  const items = [
+    ['Compliance', '✓', 'Compliance workspace'],
+    ['Reports', '▥', 'PDF and CSV exports'],
+    ['Schedules', '◷', 'Rosters and appointments'],
+    ['Settings', '⚙', 'Business, pricing and cloud'],
+  ];
+  return <div className="mobile-drawer-backdrop" onClick={onClose}>
+    <aside className="mobile-drawer" onClick={e => e.stopPropagation()}>
+      <div className="mobile-drawer-head"><div><BrandMark compact /><BrandWordmark compact /></div><button onClick={onClose} aria-label="Close menu">×</button></div>
+      <p>{business?.name || 'Kajola Care workspace'}</p>
+      <div className="mobile-drawer-list">
+        {items.map(([tab, icon, desc]) => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}><span>{icon}</span><div><b>{tab}</b><small>{desc}</small></div></button>)}
+      </div>
+      <button className="mobile-drawer-signout" onClick={onSignOut}>Sign out</button>
+    </aside>
   </div>;
 }
 
@@ -1710,7 +1734,8 @@ function BusinessOnboarding({ business, onSave, user, onLoadCloud, cloudLoading 
 
   return <div className="auth-shell">
     <section className="auth-hero">
-      <div className="crown">♛</div>
+      <BrandMark />
+      <BrandWordmark hero />
       <h1>Set up your business</h1>
       <p>Personalise Kajola Care for your invoices, payment details and workspace branding.</p>
       <div className="auth-glass"><b>{user?.email || 'Your account'}</b><span>This profile is saved in your private cloud snapshot.</span></div>

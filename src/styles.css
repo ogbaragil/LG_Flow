@@ -935,3 +935,65 @@ html[data-theme="dark"] .compliance-report-group-head small{color:#cbd5e1}
     padding: 9px 10px;
   }
 }
+
+/* v12 auth and mobile navigation polish */
+.auth-shell{
+  min-height:100vh!important;
+  background:linear-gradient(135deg,#f7fbff 0%,#ecf8f7 48%,#f9fbff 100%)!important;
+  color:#0f172a!important;
+  padding:clamp(22px,5vw,70px)!important;
+  gap:clamp(28px,6vw,86px)!important;
+  align-items:center!important;
+}
+.auth-shell:before{content:'';position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 12% 18%,rgba(18,211,200,.18),transparent 30rem),radial-gradient(circle at 90% 8%,rgba(7,52,139,.14),transparent 30rem);}
+.auth-hero,.auth-card{position:relative;z-index:1;}
+.auth-hero{padding:clamp(8px,2vw,28px)!important;color:#0f172a!important;}
+.auth-hero p{color:#334155!important;font-size:clamp(16px,2vw,22px)!important;font-weight:800!important;letter-spacing:.11em!important;text-transform:uppercase!important;}
+.auth-glass{background:rgba(255,255,255,.82)!important;border:1px solid #d8e5f4!important;color:#0f172a!important;box-shadow:0 22px 60px rgba(7,52,139,.10)!important;}
+.auth-glass b{color:#07348B!important;font-size:18px!important;}
+.auth-glass span{color:#475569!important;}
+.auth-card{background:rgba(255,255,255,.92)!important;border:1px solid #d8e5f4!important;box-shadow:0 26px 72px rgba(7,52,139,.14)!important;color:#0f172a!important;border-radius:30px!important;}
+.auth-card h2{color:#0f172a!important;font-size:clamp(28px,4vw,38px)!important;letter-spacing:-.045em!important;}
+.auth-card p{color:#475569!important;font-size:16px!important;line-height:1.55!important;}
+.auth-card input{background:#fff!important;color:#0f172a!important;border-color:#cbd8ea!important;box-shadow:0 8px 22px rgba(15,23,42,.06)!important;}
+.auth-card label span{color:#07348B!important;}
+.auth-card .primary{background:linear-gradient(135deg,#07348B,#0d62d1)!important;color:#fff!important;border-color:#0d62d1!important;box-shadow:0 18px 36px rgba(7,52,139,.22)!important;}
+.auth-card .text-link,.auth-switch{background:#fff!important;color:#07348B!important;border:1px solid #cbd8ea!important;box-shadow:none!important;}
+.auth-message{background:#eaf3ff!important;color:#07348B!important;border-color:#bcd3f5!important;}
+.auth-hero .kajola-mark{background:#fff!important;border-color:#d8e5f4!important;box-shadow:0 18px 42px rgba(7,52,139,.12)!important;}
+.auth-hero .kajola-wordmark.hero{filter:none!important;}
+@media(max-width:860px){
+  .auth-shell{grid-template-columns:1fr!important;padding:22px!important;gap:18px!important;align-items:start!important;}
+  .auth-hero{text-align:left!important;padding:4px!important;}
+  .auth-hero .kajola-wordmark.hero{font-size:42px!important;}
+  .auth-hero p{font-size:13px!important;letter-spacing:.09em!important;}
+  .auth-glass{padding:18px!important;border-radius:22px!important;}
+  .auth-card{border-radius:24px!important;padding:22px!important;}
+}
+@media(max-width:1100px){
+  .mobile-shell{background:linear-gradient(180deg,#f8fbff 0%,#eef8f7 100%)!important;color:#0f172a!important;}
+  .mobile-top{background:#07348B!important;color:#fff!important;box-shadow:0 10px 26px rgba(7,52,139,.18)!important;}
+  .mobile-main{padding:16px 14px 104px!important;}
+  .mobile-panel,.mobile-hero,.mini-kpi,.mobile-client-card,.mobile-invoice-card,.mobile-settings .card{border-radius:22px!important;border:1px solid #d8e5f4!important;background:#fff!important;box-shadow:0 10px 26px rgba(15,23,42,.07)!important;}
+  .mobile-bottom{left:10px!important;right:10px!important;bottom:10px!important;width:auto!important;padding:8px!important;border-radius:24px!important;background:rgba(255,255,255,.96)!important;border:1px solid #d8e5f4!important;box-shadow:0 -10px 30px rgba(15,23,42,.13)!important;display:grid!important;grid-template-columns:repeat(5,1fr)!important;gap:6px!important;}
+  .mobile-bottom button{min-width:0!important;border-radius:17px!important;padding:8px 2px!important;background:transparent!important;color:#475569!important;box-shadow:none!important;border:0!important;}
+  .mobile-bottom button span{font-size:19px!important;line-height:1!important;}
+  .mobile-bottom button small{font-size:10px!important;line-height:1.1!important;white-space:nowrap!important;}
+  .mobile-bottom button.active{background:#0d5bd7!important;color:#fff!important;}
+  .mobile-fab{bottom:90px!important;right:18px!important;}
+  .mobile-drawer-backdrop{position:fixed;inset:0;z-index:80;background:rgba(15,23,42,.38);backdrop-filter:blur(7px);display:flex;justify-content:flex-end;}
+  .mobile-drawer{width:min(86vw,360px);height:100%;background:#fff;color:#0f172a;padding:18px;border-left:1px solid #d8e5f4;box-shadow:-22px 0 60px rgba(15,23,42,.22);display:flex;flex-direction:column;gap:14px;animation:drawerIn .18s ease-out;}
+  .mobile-drawer-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-bottom:12px;border-bottom:1px solid #e6edf6;}
+  .mobile-drawer-head>div{display:flex;align-items:center;gap:10px;}
+  .mobile-drawer-head button{width:42px;height:42px;border-radius:14px;padding:0;font-size:26px;line-height:1;background:#f1f6fd!important;color:#07348B!important;box-shadow:none!important;}
+  .mobile-drawer p{margin:0;color:#526174;line-height:1.45;}
+  .mobile-drawer-list{display:grid;gap:10px;margin-top:4px;}
+  .mobile-drawer-list button{display:flex;align-items:center;gap:12px;text-align:left;padding:14px;border-radius:18px;background:#f8fbff!important;color:#0f172a!important;border:1px solid #d8e5f4!important;box-shadow:none!important;}
+  .mobile-drawer-list button>span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:#eaf3ff;color:#07348B;font-weight:900;}
+  .mobile-drawer-list button b{display:block;color:#0f172a;font-size:15px;}
+  .mobile-drawer-list button small{display:block;color:#64748b;margin-top:3px;font-size:12px;}
+  .mobile-drawer-list button.active{background:#07348B!important;color:#fff!important;border-color:#07348B!important;}
+  .mobile-drawer-list button.active b,.mobile-drawer-list button.active small{color:#fff!important;}
+  .mobile-drawer-signout{margin-top:auto;background:#fff1f2!important;color:#be123c!important;border-color:#fecdd3!important;box-shadow:none!important;}
+  @keyframes drawerIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+}
