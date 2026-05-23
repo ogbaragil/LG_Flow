@@ -839,6 +839,7 @@ function MobileShell({ active, setActive, complianceSection, setComplianceSectio
 }
 
 function MobileSideDrawer({ active, setActive, onClose, onSignOut, business, onComplianceSection }) {
+  const [complianceOpen, setComplianceOpen] = useState(false);
   const items = [
     ['Reports', '▥', 'PDF and CSV exports'],
     ['Schedules', '◷', 'Rosters and appointments'],
@@ -854,11 +855,13 @@ function MobileSideDrawer({ active, setActive, onClose, onSignOut, business, onC
     <aside className="mobile-drawer" onClick={e => e.stopPropagation()}>
       <div className="mobile-drawer-head"><div><BrandMark compact /><BrandWordmark compact /></div><button onClick={onClose} aria-label="Close menu">×</button></div>
       <p>{business?.name || 'Kajola Care workspace'}</p>
-      <div className="mobile-drawer-group">
-        <h4>Compliance</h4>
-        <div className="mobile-drawer-list compliance-drawer-list">
+      <div className={`mobile-drawer-group ${complianceOpen ? 'open' : ''}`}>
+        <button type="button" className="mobile-drawer-toggle" onClick={() => setComplianceOpen(open => !open)} aria-expanded={complianceOpen}>
+          <span>✓</span><div><b>Compliance</b><small>Employees, participants, business and due items</small></div><strong>{complianceOpen ? '−' : '+'}</strong>
+        </button>
+        {complianceOpen && <div className="mobile-drawer-list compliance-drawer-list">
           {complianceSections.map(([sectionName, desc]) => <button key={sectionName} className={active === 'Compliance' ? 'active-subtle' : ''} onClick={() => onComplianceSection(sectionName)}><span>✓</span><div><b>{sectionName}</b><small>{desc}</small></div></button>)}
-        </div>
+        </div>}
       </div>
       <div className="mobile-drawer-list">
         {items.map(([tab, icon, desc]) => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}><span>{icon}</span><div><b>{tab}</b><small>{desc}</small></div></button>)}
@@ -1534,7 +1537,6 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
     if (editingWorkerId === id) { setWorkerDraft(emptyWorker()); setEditingWorkerId(null); }
   };
   const updateWorkerDraft = (field, value) => setWorkerDraft(prev => ({ ...prev, [field]: value }));
-  const complianceTabs = ['Employees', 'Participants', 'Business', 'Items'];
   return <>
     <Card title="Compliance Workspace" action={`${items.length} needs review`}>
       <p>Track employee requirements, participant plan compliance, business insurance and audit obligations.</p>
@@ -1544,7 +1546,6 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
         <InsightCard label="Overdue" value={counts.overdue} sub="Past due" />
         <InsightCard label="Missing" value={counts.missing} sub="No date provided" />
       </div>
-      <div className="subnav compliance-subnav">{complianceTabs.map(tab => <button key={tab} className={section === tab ? 'active' : ''} onClick={() => setSection(tab)}>{tab}</button>)}</div>
     </Card>
 
     {section === 'Employees' && <>
