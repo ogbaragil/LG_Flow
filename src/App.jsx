@@ -773,6 +773,20 @@ export default function App() {
     transactions={transactions}
     workers={workers}
     setWorkers={setWorkers}
+    risks={risks}
+    setRisks={setRisks}
+    incidents={incidents}
+    setIncidents={setIncidents}
+    complaints={complaints}
+    setComplaints={setComplaints}
+    improvements={improvements}
+    setImprovements={setImprovements}
+    audits={audits}
+    setAudits={setAudits}
+    governanceReviews={governanceReviews}
+    setGovernanceReviews={setGovernanceReviews}
+    documents={documents}
+    setDocuments={setDocuments}
     notice={notice}
     user={user}
     theme={theme}
@@ -821,7 +835,7 @@ function BrandMark({ compact = false }) {
   return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/icons/kajola-care-logo.png" alt="Kajola Care" /></div>;
 }
 
-function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const activeClients = clients.filter(c => !c.archived);
@@ -1781,6 +1795,7 @@ function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, 
 
 function NdisPricingManager({ items, onChange, onSave }) {
   const [editingRates, setEditingRates] = useState(false);
+  const [query, setQuery] = useState('');
   const pricingItems = getPricingItems({ pricingItems: items });
   const groups = [...new Set(pricingItems.map(item => item.group || 'Custom Items'))];
   const filtered = pricingItems.filter(item => `${item.group} ${item.itemNumber} ${item.label} ${item.unitType}`.toLowerCase().includes(query.toLowerCase()));
