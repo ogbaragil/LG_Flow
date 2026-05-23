@@ -253,6 +253,7 @@ const storageKeyFor = (user) => user?.id ? `${STORAGE_KEY}_${user.id}` : STORAGE
 
 export default function App() {
   const [active, setActive] = useState('Dashboard');
+  const [complianceSection, setComplianceSection] = useState('Employees');
   const [clients, setClients] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -701,10 +702,21 @@ export default function App() {
   const needsOnboarding = !business.name.trim();
   if (needsOnboarding) return <BusinessOnboarding business={business} onSave={saveBusiness} user={user} onLoadCloud={() => loadCloudData()} cloudLoading={cloudLoading} />;
 
+  const openComplianceSection = (sectionName) => {
+    setComplianceSection(sectionName);
+    setActive('Compliance');
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 20);
+  };
+
   return <><div className="shell desktop-shell">
     <aside className="sidebar">
       <div className="brand"><BrandMark /><div><BrandWordmark /><p>Care • Connect • Empower</p></div></div>
-      <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
+      <nav>{TABS.map(t => t === 'Compliance' ? <div className="nav-compliance" key={t}>
+        <button className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>
+        <div className="nav-flyout" role="menu" aria-label="Compliance sections">
+          {[['Employees','Employee compliance'],['Participants','Participant compliance'],['Business','Business compliance'],['Items','Compliance items']].map(([sectionName, desc]) => <button key={sectionName} onClick={() => openComplianceSection(sectionName)}><b>{sectionName}</b><small>{desc}</small></button>)}
+        </div>
+      </div> : <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
       <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'Manual cloud sync ready' : 'Cloud sync disabled'}</small></div>
       <div className="profile-card"><div className="avatar">{(user.email || 'KC').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
@@ -715,7 +727,7 @@ export default function App() {
       {active === 'Participants' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
       {active === 'Invoices' && <Invoices pricingItems={pricingItems} clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Finance' && <FinanceWorkspace business={business} clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} updateStatus={updateTxnStatus} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
-      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} />}
+      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
       {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
       {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
@@ -724,6 +736,8 @@ export default function App() {
   <MobileShell
     active={active}
     setActive={setActive}
+    complianceSection={complianceSection}
+    setComplianceSection={setComplianceSection}
     displayName={displayName}
     welcomeMessage={welcomeMessage}
     business={business}
@@ -782,14 +796,15 @@ function BrandMark({ compact = false }) {
   return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/icons/kajola-care-logo.png" alt="Kajola Care" /></div>;
 }
 
-function MobileShell({ active, setActive, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const activeClients = clients.filter(c => !c.archived);
-  const alerts = getMobileAlerts({ clients, invoices, totals });
+  const alerts = getMobileAlerts({ clients, invoices, totals, business, workers });
   const recentInvoices = invoices.slice(0, 4);
   const openAction = (tab) => { setFabOpen(false); setMoreOpen(false); setActive(tab); setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 20); };
   const openMore = () => setMoreOpen(true);
+  const openComplianceSection = (sectionName) => { setComplianceSection(sectionName); openAction('Compliance'); };
   const moreActive = ['Compliance','Reports','Schedules','Settings'].includes(active);
   return <div className="mobile-shell">
     <header className="mobile-top">
@@ -802,7 +817,7 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
       {active === 'Participants' && <MobileParticipants clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={cancelClient} />}
       {active === 'Invoices' && <MobileInvoices pricingItems={pricingItems} clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={cancelInvoice} />}
       {active === 'Finance' && <MobileFinance business={business} clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
-      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} />}
+      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
       {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
       {active === 'Settings' && <div className="mobile-settings"><MobileMore setActive={setActive} />{settings}</div>}
@@ -815,7 +830,7 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
       <button onClick={() => openAction('Finance')}>New expense</button>
       <button onClick={() => setFabOpen(false)}>Close</button>
     </div></div>}
-    {moreOpen && <MobileSideDrawer active={active} setActive={openAction} onClose={() => setMoreOpen(false)} onSignOut={onSignOut} business={business} />}
+    {moreOpen && <MobileSideDrawer active={active} setActive={openAction} onClose={() => setMoreOpen(false)} onSignOut={onSignOut} business={business} onComplianceSection={openComplianceSection} />}
     <nav className="mobile-bottom">
       {[['Dashboard','Dashboard','⌂'],['Participants','Participants','♙'],['Invoices','Invoices','▤'],['Finance','Finance','↔']].map(([tab,label,icon]) => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => openAction(tab)}><span>{icon}</span><small>{label}</small></button>)}
       <button className={moreActive ? 'active' : ''} onClick={openMore}><span>☰</span><small>More</small></button>
@@ -823,17 +838,28 @@ function MobileShell({ active, setActive, displayName, welcomeMessage, business,
   </div>;
 }
 
-function MobileSideDrawer({ active, setActive, onClose, onSignOut, business }) {
+function MobileSideDrawer({ active, setActive, onClose, onSignOut, business, onComplianceSection }) {
   const items = [
-    ['Compliance', '✓', 'Compliance workspace'],
     ['Reports', '▥', 'PDF and CSV exports'],
     ['Schedules', '◷', 'Rosters and appointments'],
     ['Settings', '⚙', 'Business, pricing and cloud'],
+  ];
+  const complianceSections = [
+    ['Employees', 'Worker checks and training'],
+    ['Participants', 'Plan, consent and agreement'],
+    ['Business', 'Insurance and audits'],
+    ['Items', 'Due and overdue report'],
   ];
   return <div className="mobile-drawer-backdrop" onClick={onClose}>
     <aside className="mobile-drawer" onClick={e => e.stopPropagation()}>
       <div className="mobile-drawer-head"><div><BrandMark compact /><BrandWordmark compact /></div><button onClick={onClose} aria-label="Close menu">×</button></div>
       <p>{business?.name || 'Kajola Care workspace'}</p>
+      <div className="mobile-drawer-group">
+        <h4>Compliance</h4>
+        <div className="mobile-drawer-list compliance-drawer-list">
+          {complianceSections.map(([sectionName, desc]) => <button key={sectionName} className={active === 'Compliance' ? 'active-subtle' : ''} onClick={() => onComplianceSection(sectionName)}><span>✓</span><div><b>{sectionName}</b><small>{desc}</small></div></button>)}
+        </div>
+      </div>
       <div className="mobile-drawer-list">
         {items.map(([tab, icon, desc]) => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}><span>{icon}</span><div><b>{tab}</b><small>{desc}</small></div></button>)}
       </div>
@@ -842,15 +868,20 @@ function MobileSideDrawer({ active, setActive, onClose, onSignOut, business }) {
   </div>;
 }
 
-function getMobileAlerts({ clients, invoices, totals }) {
+function getMobileAlerts({ clients, invoices, totals, business, workers = [] }) {
+  const complianceItems = getComplianceItems({ clients, invoices, totals, business, workers });
+  const overdue = complianceItems.filter(i => i.tone === 'overdue');
+  const due = complianceItems.filter(i => i.tone === 'due');
   const alerts = [];
+  if (overdue.length) alerts.push({ type: 'Overdue', title: `${overdue.length} compliance item${overdue.length === 1 ? '' : 's'} overdue`, meta: overdue.slice(0, 3).map(i => i.title).join(' · ') });
+  if (due.length) alerts.push({ type: 'Due soon', title: `${due.length} compliance item${due.length === 1 ? '' : 's'} due soon`, meta: due.slice(0, 3).map(i => i.title).join(' · ') });
   clients.filter(c => !c.archived).forEach(c => {
     const d = daysUntil(c.planEndDate);
     if (d !== null && d >= 0 && d <= 30) alerts.push({ type: 'Plan', title: `${c.name} plan ends in ${d} day${d === 1 ? '' : 's'}`, meta: fmt(c.planEndDate) });
   });
-  invoices.filter(i => i.status !== 'Paid').forEach(i => {
+  invoices.filter(i => normaliseInvoiceStatus(i.status) !== 'Paid').forEach(i => {
     const d = daysUntil(i.dueDate);
-    if (d !== null && d < 0) alerts.push({ type: 'Overdue', title: `${i.invoiceNumber} is overdue`, meta: `${i.clientName} · ${money(i.total)}` });
+    if (d !== null && d < 0) alerts.push({ type: 'Invoice', title: `${i.invoiceNumber} is overdue`, meta: `${i.clientName} · ${money(i.total)}` });
   });
   if (totals.totalBudget > 0) {
     const used = Math.min(999, Math.round((totals.invoicedTotal / totals.totalBudget) * 100));
@@ -873,7 +904,7 @@ function MobileHome({ welcomeMessage, totals, alerts, invoices, clients, setActi
       <MiniKpi label="Net" value={money(totals.net)} />
     </div>
     <div className="mobile-quick"><button onClick={() => setActive('Invoices')}>+ Invoice</button><button onClick={() => setActive('Finance')}>+ Expense</button></div>
-    <MobilePanel title="Today" action={alerts.length ? `${alerts.length} alerts` : 'All clear'}>{alerts.length ? alerts.map((a,i) => <div className="mobile-alert" key={i}><span>{a.type}</span><div><b>{a.title}</b><small>{a.meta}</small></div></div>) : <p className="mobile-empty">No urgent NDIS alerts today.</p>}</MobilePanel>
+    <MobilePanel title="Today" action={alerts.length ? `${alerts.length} alerts` : 'All clear'}>{alerts.length ? alerts.map((a,i) => <div className="mobile-alert" key={i}><span>{a.type}</span><div><b>{a.title}</b><small>{a.meta}</small></div></div>) : <p className="mobile-empty">No urgent compliance, invoice, or plan alerts today.</p>}<button className="text-link mobile-alert-link" onClick={() => setActive('Compliance')}>Open compliance report</button></MobilePanel>
     <MobilePanel title="Recent invoices" action="View all"><Records rows={invoices} empty="No invoices yet." render={i => <div className="mobile-list-row" key={i.id}><div><b>{i.invoiceNumber}</b><small>{i.clientName} · {fmt(i.dueDate)}</small></div><strong>{money(i.total)}</strong></div>} /></MobilePanel>
     <MobilePanel title="Active clients" action="View all"><Records rows={clients.slice(0,3)} empty="No participants yet." render={c => <div className="mobile-list-row" key={c.id}><div><b>{c.name}</b><small>Plan ends {fmt(c.planEndDate)}</small></div><strong>{money(c.budget)}</strong></div>} /></MobilePanel>
   </section>;
@@ -1454,8 +1485,10 @@ function FinanceWorkspace({ business, clients, transactions, invoices = [], form
   </>;
 }
 
-function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness, saveBusiness, workers = [], setWorkers = () => {} }) {
-  const [section, setSection] = useState('Employees');
+function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness, saveBusiness, workers = [], setWorkers = () => {}, initialSection = 'Employees', onSectionChange = () => {} }) {
+  const [section, setSectionState] = useState(initialSection || 'Employees');
+  useEffect(() => { if (initialSection && initialSection !== section) setSectionState(initialSection); }, [initialSection]);
+  const setSection = (next) => { setSectionState(next); onSectionChange(next); };
   const [workerDraft, setWorkerDraft] = useState(emptyWorker());
   const [editingWorkerId, setEditingWorkerId] = useState(null);
   const [workerFormOpen, setWorkerFormOpen] = useState(false);

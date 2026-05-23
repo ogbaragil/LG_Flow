@@ -997,3 +997,18 @@ html[data-theme="dark"] .compliance-report-group-head small{color:#cbd5e1}
   .mobile-drawer-signout{margin-top:auto;background:#fff1f2!important;color:#be123c!important;border-color:#fecdd3!important;box-shadow:none!important;}
   @keyframes drawerIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
 }
+
+/* v13 dashboard alerts, compliance menu, and mobile KPI density */
+.nav-compliance{position:relative;display:block}
+.nav-compliance>button{width:100%}
+.nav-flyout{position:absolute;left:calc(100% + 10px);top:0;width:260px;padding:10px;border:1px solid #d8e5f4;border-radius:20px;background:#fff;box-shadow:0 22px 54px rgba(15,23,42,.18);display:grid;gap:8px;opacity:0;visibility:hidden;transform:translateX(-8px);transition:opacity .16s ease,transform .16s ease,visibility .16s;z-index:45}
+.nav-compliance:hover .nav-flyout,.nav-compliance:focus-within .nav-flyout{opacity:1;visibility:visible;transform:translateX(0)}
+.nav-flyout button{display:block!important;width:100%;text-align:left;border-radius:14px!important;padding:12px 13px!important;background:#f8fbff!important;color:#0f172a!important;border:1px solid #e2eaf5!important;box-shadow:none!important;margin:0!important}
+.nav-flyout button:hover{background:#eaf3ff!important;border-color:#bcd3f5!important;transform:none!important}
+.nav-flyout b{display:block;color:#07348B;font-size:14px}.nav-flyout small{display:block;color:#64748b;margin-top:3px;font-weight:700}
+.mobile-alert{border:1px solid #d8e5f4;border-radius:18px;background:#f8fbff;padding:12px;margin:10px 0;align-items:flex-start!important}
+.mobile-alert>span{background:#eaf3ff!important;color:#07348B!important;border:1px solid #c5daf7!important;border-radius:999px!important;padding:7px 10px!important;width:auto!important;height:auto!important;font-size:11px!important;font-weight:900!important;white-space:nowrap!important}
+.mobile-alert b{color:#0f172a!important}.mobile-alert small{color:#526174!important;line-height:1.35!important}.mobile-alert-link{width:100%;margin-top:8px!important}
+.mobile-drawer-group{border:1px solid #e2eaf5;border-radius:20px;padding:12px;background:#fbfdff}.mobile-drawer-group h4{margin:0 0 10px;color:#07348B;font-size:13px;text-transform:uppercase;letter-spacing:.09em}.mobile-drawer-list button.active-subtle{border-color:#bcd3f5!important;background:#eaf3ff!important}
+@media(max-width:820px){.mobile-kpis{grid-template-columns:repeat(2,minmax(0,1fr))!important}.mobile-kpis.two{grid-template-columns:repeat(2,minmax(0,1fr))!important}.mini-kpi{min-height:118px;display:flex;flex-direction:column;justify-content:center}.mini-kpi b{font-size:26px!important;line-height:1.1!important}.mobile-quick{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media(max-width:360px){.mobile-kpis,.mobile-kpis.two{grid-template-columns:1fr!important}.mini-kpi{min-height:auto}}
