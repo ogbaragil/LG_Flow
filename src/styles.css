@@ -1029,3 +1029,6 @@ html[data-theme="dark"] .compliance-report-group-head small{color:#cbd5e1}
 .mobile-drawer-group.open{background:#fff!important;}
 .compliance-drawer-list{margin-top:10px!important;}
 @media(max-width:900px){.compliance-subnav{display:none!important;}}
+
+/* v15 audit, compliance and business-systems modules */
+.compliance-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 6px}.compliance-tabs button{border-radius:999px;padding:9px 12px;background:#f8fbff;border:1px solid #d8e5f4;color:#0f172a;box-shadow:none}.compliance-tabs button.active{background:#07348B;color:#fff;border-color:#07348B}.report-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.report-button-row{display:inline-flex;gap:6px;flex-wrap:wrap}.compliance-register .client-table-row{align-items:center}.compliance-register .traffic-pill{justify-self:start}.section-label{margin:16px 0 8px;color:#07348B}.muted{color:#64748b}.grid textarea{min-height:92px}.report-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:12px 0}@media(max-width:900px){.report-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.compliance-tabs{overflow:auto;flex-wrap:nowrap;padding-bottom:6px}.compliance-tabs button{white-space:nowrap}.report-actions,.report-button-row{display:grid;grid-template-columns:1fr;width:100%}}
