@@ -107,7 +107,7 @@ const normaliseBusiness = (business = {}) => {
     businessCompliance: getBusinessComplianceItems(merged),
   };
 };
-const SECTION_KEYS = ['business', 'clients', 'invoices', 'transactions', 'workers'];
+const SECTION_KEYS = ['business', 'clients', 'invoices', 'transactions', 'workers', 'risks', 'incidents', 'complaints', 'improvements', 'audits', 'governanceReviews', 'documents'];
 const sectionUpdatedAt = (payload, section) => payload?._meta?.sectionsUpdatedAt?.[section] || '';
 const isMeaningfulBusiness = (business = {}) => {
   const b = normaliseBusiness(business);
@@ -134,12 +134,19 @@ const normalisePayload = (payload = {}) => {
     invoices: Array.isArray(payload.invoices) ? payload.invoices : [],
     transactions: normaliseTransactions(payload.transactions, normalisedBusiness),
     workers: normaliseWorkers(payload.workers || []),
+    risks: Array.isArray(payload.risks) ? payload.risks : [],
+    incidents: Array.isArray(payload.incidents) ? payload.incidents : [],
+    complaints: Array.isArray(payload.complaints) ? payload.complaints : [],
+    improvements: Array.isArray(payload.improvements) ? payload.improvements : [],
+    audits: Array.isArray(payload.audits) ? payload.audits : [],
+    governanceReviews: Array.isArray(payload.governanceReviews) ? payload.governanceReviews : [],
+    documents: Array.isArray(payload.documents) ? payload.documents : [],
     _meta: normaliseMeta(payload),
   };
 };
 const stripMeta = (payload = {}) => {
   const p = normalisePayload(payload);
-  return { business: p.business, clients: p.clients, invoices: p.invoices, transactions: p.transactions, workers: p.workers };
+  return { business: p.business, clients: p.clients, invoices: p.invoices, transactions: p.transactions, workers: p.workers, risks: p.risks, incidents: p.incidents, complaints: p.complaints, improvements: p.improvements, audits: p.audits, governanceReviews: p.governanceReviews, documents: p.documents };
 };
 const mergePayloads = (localPayload = {}, cloudPayload = {}) => {
   const local = normalisePayload(localPayload);
@@ -258,6 +265,13 @@ export default function App() {
   const [invoices, setInvoices] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [workers, setWorkers] = useState([]);
+  const [risks, setRisks] = useState([]);
+  const [incidents, setIncidents] = useState([]);
+  const [complaints, setComplaints] = useState([]);
+  const [improvements, setImprovements] = useState([]);
+  const [audits, setAudits] = useState([]);
+  const [governanceReviews, setGovernanceReviews] = useState([]);
+  const [documents, setDocuments] = useState([]);
   const [business, setBusiness] = useState(EMPTY_BUSINESS);
   const [clientForm, setClientForm] = useState(emptyClient);
   const [invoiceForm, setInvoiceForm] = useState(emptyInvoice());
@@ -315,9 +329,16 @@ export default function App() {
     setInvoices(next.invoices);
     setTransactions(next.transactions);
     setWorkers(next.workers);
+    setRisks(next.risks);
+    setIncidents(next.incidents);
+    setComplaints(next.complaints);
+    setImprovements(next.improvements);
+    setAudits(next.audits);
+    setGovernanceReviews(next.governanceReviews);
+    setDocuments(next.documents);
   };
 
-  const currentPayload = () => normalisePayload({ business, clients, invoices, transactions, workers, _meta: { sectionsUpdatedAt: sectionUpdatedAtRef.current } });
+  const currentPayload = () => normalisePayload({ business, clients, invoices, transactions, workers, risks, incidents, complaints, improvements, audits, governanceReviews, documents, _meta: { sectionsUpdatedAt: sectionUpdatedAtRef.current } });
   const serialisePayload = (data) => JSON.stringify(normalisePayload(data || currentPayload()));
   const payloadWithFreshMeta = () => {
     const data = currentPayload();
@@ -331,9 +352,9 @@ export default function App() {
     try {
       const raw = localStorage.getItem(storageKeyFor(user));
       if (raw) applyPayload(JSON.parse(raw));
-      else applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], _meta: { sectionsUpdatedAt: {} } });
+      else applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } });
     } catch {
-      applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], _meta: { sectionsUpdatedAt: {} } });
+      applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } });
     } finally {
       setStorageLoaded(true);
     }
@@ -346,7 +367,7 @@ export default function App() {
     if (snapshot === lastLocalSnapshotRef.current) return;
     lastLocalSnapshotRef.current = snapshot;
     localStorage.setItem(storageKeyFor(user), snapshot);
-  }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers]);
+  }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers, risks, incidents, complaints, improvements, audits, governanceReviews, documents]);
 
   // Cloud sync is manual only. Local changes are still saved immediately to this device.
   useEffect(() => {
@@ -711,12 +732,7 @@ export default function App() {
   return <><div className="shell desktop-shell">
     <aside className="sidebar">
       <div className="brand"><BrandMark /><div><BrandWordmark /><p>Care • Connect • Empower</p></div></div>
-      <nav>{TABS.map(t => t === 'Compliance' ? <div className="nav-compliance" key={t}>
-        <button className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>
-        <div className="nav-flyout" role="menu" aria-label="Compliance sections">
-          {[['Employees','Employee compliance'],['Participants','Participant compliance'],['Business','Business compliance'],['Items','Compliance items']].map(([sectionName, desc]) => <button key={sectionName} onClick={() => openComplianceSection(sectionName)}><b>{sectionName}</b><small>{desc}</small></button>)}
-        </div>
-      </div> : <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
+      <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
       <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'Manual cloud sync ready' : 'Cloud sync disabled'}</small></div>
       <div className="profile-card"><div className="avatar">{(user.email || 'KC').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
@@ -727,10 +743,10 @@ export default function App() {
       {active === 'Participants' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
       {active === 'Invoices' && <Invoices pricingItems={pricingItems} clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Finance' && <FinanceWorkspace business={business} clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} updateStatus={updateTxnStatus} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
-      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
-      {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} />}
+      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} risks={risks} setRisks={setRisks} incidents={incidents} setIncidents={setIncidents} complaints={complaints} setComplaints={setComplaints} improvements={improvements} setImprovements={setImprovements} audits={audits} setAudits={setAudits} governanceReviews={governanceReviews} setGovernanceReviews={setGovernanceReviews} documents={documents} setDocuments={setDocuments} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
+      {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} risks={risks} incidents={incidents} complaints={complaints} improvements={improvements} audits={audits} governanceReviews={governanceReviews} documents={documents} workers={workers} />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
-      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
+      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
     </main>
   </div>
   <MobileShell
@@ -741,6 +757,10 @@ export default function App() {
     displayName={displayName}
     welcomeMessage={welcomeMessage}
     business={business}
+    clients={clients}
+    invoices={invoices}
+    transactions={transactions}
+    workers={workers}
     pricingItems={pricingItems}
     totals={totals}
     clients={clients}
@@ -748,6 +768,20 @@ export default function App() {
     transactions={transactions}
     workers={workers}
     setWorkers={setWorkers}
+    risks={risks}
+    setRisks={setRisks}
+    incidents={incidents}
+    setIncidents={setIncidents}
+    complaints={complaints}
+    setComplaints={setComplaints}
+    improvements={improvements}
+    setImprovements={setImprovements}
+    audits={audits}
+    setAudits={setAudits}
+    governanceReviews={governanceReviews}
+    setGovernanceReviews={setGovernanceReviews}
+    documents={documents}
+    setDocuments={setDocuments}
     notice={notice}
     user={user}
     theme={theme}
@@ -783,7 +817,7 @@ export default function App() {
     cancelTxn={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}
     setBusiness={setBusiness}
     saveBusiness={saveBusiness}
-    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>}
+    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>}
   />
 </>;
 }
@@ -793,10 +827,10 @@ function BrandWordmark({ compact = false, hero = false }) {
 }
 
 function BrandMark({ compact = false }) {
-  return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/icons/kajola-care-logo.png" alt="Kajola Care" /></div>;
+  return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/kajola-care-logo.png" alt="Kajola Care" /></div>;
 }
 
-function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const activeClients = clients.filter(c => !c.archived);
@@ -817,8 +851,8 @@ function MobileShell({ active, setActive, complianceSection, setComplianceSectio
       {active === 'Participants' && <MobileParticipants clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={cancelClient} />}
       {active === 'Invoices' && <MobileInvoices pricingItems={pricingItems} clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={cancelInvoice} />}
       {active === 'Finance' && <MobileFinance business={business} clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
-      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
-      {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} />}
+      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} risks={risks} setRisks={setRisks} incidents={incidents} setIncidents={setIncidents} complaints={complaints} setComplaints={setComplaints} improvements={improvements} setImprovements={setImprovements} audits={audits} setAudits={setAudits} governanceReviews={governanceReviews} setGovernanceReviews={setGovernanceReviews} documents={documents} setDocuments={setDocuments} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
+      {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} risks={risks} incidents={incidents} complaints={complaints} improvements={improvements} audits={audits} governanceReviews={governanceReviews} documents={documents} workers={workers} />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
       {active === 'Settings' && <div className="mobile-settings"><MobileMore setActive={setActive} />{settings}</div>}
     </main>
@@ -838,31 +872,17 @@ function MobileShell({ active, setActive, complianceSection, setComplianceSectio
   </div>;
 }
 
-function MobileSideDrawer({ active, setActive, onClose, onSignOut, business, onComplianceSection }) {
-  const [complianceOpen, setComplianceOpen] = useState(false);
+function MobileSideDrawer({ active, setActive, onClose, onSignOut, business }) {
   const items = [
+    ['Compliance', '✓', 'Audit, worker and business compliance'],
     ['Reports', '▥', 'PDF and CSV exports'],
     ['Schedules', '◷', 'Rosters and appointments'],
     ['Settings', '⚙', 'Business, pricing and cloud'],
-  ];
-  const complianceSections = [
-    ['Employees', 'Worker checks and training'],
-    ['Participants', 'Plan, consent and agreement'],
-    ['Business', 'Insurance and audits'],
-    ['Items', 'Due and overdue report'],
   ];
   return <div className="mobile-drawer-backdrop" onClick={onClose}>
     <aside className="mobile-drawer" onClick={e => e.stopPropagation()}>
       <div className="mobile-drawer-head"><div><BrandMark compact /><BrandWordmark compact /></div><button onClick={onClose} aria-label="Close menu">×</button></div>
       <p>{business?.name || 'Kajola Care workspace'}</p>
-      <div className={`mobile-drawer-group ${complianceOpen ? 'open' : ''}`}>
-        <button type="button" className="mobile-drawer-toggle" onClick={() => setComplianceOpen(open => !open)} aria-expanded={complianceOpen}>
-          <span>✓</span><div><b>Compliance</b><small>Employees, participants, business and due items</small></div><strong>{complianceOpen ? '−' : '+'}</strong>
-        </button>
-        {complianceOpen && <div className="mobile-drawer-list compliance-drawer-list">
-          {complianceSections.map(([sectionName, desc]) => <button key={sectionName} className={active === 'Compliance' ? 'active-subtle' : ''} onClick={() => onComplianceSection(sectionName)}><span>✓</span><div><b>{sectionName}</b><small>{desc}</small></div></button>)}
-        </div>}
-      </div>
       <div className="mobile-drawer-list">
         {items.map(([tab, icon, desc]) => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}><span>{icon}</span><div><b>{tab}</b><small>{desc}</small></div></button>)}
       </div>
@@ -1422,7 +1442,192 @@ function exportTransactionReportPdf({ business = {}, transactions = [], period =
   doc.save(`${cleanFile(business.name)}-transaction-report-${option.key}.pdf`);
 }
 
-function ReportsWorkspace({ business, transactions = [], clients = [] }) {
+
+const EXPORT_COLUMNS = {
+  risks: ['title','participantName','category','likelihood','impact','rating','treatment','owner','reviewDate','status','evidence'],
+  incidents: ['title','participantName','date','severity','reportable','immediateAction','followUp','status','evidence'],
+  complaints: ['title','participantName','date','receivedBy','category','details','resolution','status','evidence'],
+  improvements: ['title','source','owner','dueDate','action','outcome','status','evidence'],
+  audits: ['title','date','scope','findings','actions','status','evidence'],
+  governanceReviews: ['title','date','attendees','summary','decisions','actions','nextReviewDate','status','evidence'],
+  documents: ['title','category','owner','reviewDate','version','location','status','notes'],
+};
+const COMPLIANCE_NAV = ['Employees','Participants','Business','Risks','Incidents','Complaints','Improvements','Audits','Governance','Documents','Items'];
+const emptyRecordFor = (type) => ({ id: makeId(type), title: '', participantId: '', participantName: '', category: '', date: todayISO(), owner: '', status: 'Open', evidence: '', notes: '', createdAt: new Date().toISOString(),
+  likelihood: 'Possible', impact: 'Moderate', rating: 'Medium', treatment: '', reviewDate: addDaysISO(90),
+  severity: 'Low', reportable: 'No', immediateAction: '', followUp: '',
+  receivedBy: '', details: '', resolution: '',
+  source: 'Audit', action: '', outcome: '', dueDate: addDaysISO(14),
+  scope: 'NDIS Practice Standards', findings: '', actions: '',
+  attendees: '', summary: '', decisions: '', nextReviewDate: addDaysISO(90),
+  version: '1.0', location: '',
+});
+const withParticipantName = (record, clients = []) => {
+  const c = clients.find(x => x.id === record.participantId);
+  return { ...record, participantName: record.participantName || c?.name || '' };
+};
+function downloadCsv(filename, rows, cols) {
+  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [cols.join(','), ...rows.map(r => cols.map(c => esc(r[c])).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+}
+function drawPdfLogo(doc, business = {}, x = 14, y = 10, size = 18) {
+  const markText = (business.name || 'Kajola Care').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || 'KC';
+  if (business.logoUrl) {
+    try {
+      const imageType = String(business.logoUrl).includes('image/png') ? 'PNG' : 'JPEG';
+      doc.addImage(business.logoUrl, imageType, x, y, size, size, undefined, 'FAST');
+      return;
+    } catch (e) {
+      // Fall through to a vector monogram if the uploaded logo cannot be embedded.
+    }
+  }
+  doc.setFillColor(7, 52, 139);
+  doc.roundedRect(x, y, size, size, 4, 4, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(9);
+  doc.text(markText, x + size / 2, y + size / 2 + 3, { align: 'center' });
+}
+
+function drawProfessionalPdfHeader(doc, { business = {}, title = 'Report', subtitle = '', meta = [] } = {}) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  const right = pageWidth - margin;
+  doc.setFillColor(248, 250, 252);
+  doc.rect(0, 0, pageWidth, 42, 'F');
+  doc.setDrawColor(214, 226, 242);
+  doc.line(0, 42, pageWidth, 42);
+  drawPdfLogo(doc, business, margin, 10, 20);
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(15);
+  doc.setTextColor(15, 23, 42);
+  doc.text(safeText(business.name || 'Kajola Care'), margin + 26, 17);
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  const companyLines = [business.abn ? `ABN ${business.abn}` : '', business.address || '', [business.email, business.phone].filter(Boolean).join('  •  ')].filter(Boolean);
+  companyLines.slice(0, 3).forEach((line, idx) => doc.text(safeText(line), margin + 26, 23 + idx * 5));
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(17);
+  doc.setTextColor(7, 52, 139);
+  doc.text(safeText(title), right, 17, { align: 'right' });
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  const rightLines = [subtitle, ...meta, `Generated ${new Date().toLocaleString()}`].filter(Boolean);
+  rightLines.slice(0, 4).forEach((line, idx) => doc.text(safeText(line), right, 23 + idx * 5, { align: 'right' }));
+  return 52;
+}
+
+function drawProfessionalPdfFooter(doc, business = {}, title = 'Report') {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const right = pageWidth - margin;
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i += 1) {
+    doc.setPage(i);
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin, pageHeight - 15, right, pageHeight - 15);
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`${business.name || 'Kajola Care'} · ${title}`, margin, pageHeight - 9);
+    doc.text(`Generated by Kajola Care · Page ${i} of ${pages}`, right, pageHeight - 9, { align: 'right' });
+  }
+}
+
+function exportRegisterPdf({ business = {}, title, rows = [], cols = [] }) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const right = pageWidth - margin;
+  let y = drawProfessionalPdfHeader(doc, { business, title, subtitle: 'Audit and compliance register', meta: [`Records: ${rows.length}`] });
+
+  const ensure = (n = 12) => {
+    if (y + n > pageHeight - 22) {
+      doc.addPage();
+      y = drawProfessionalPdfHeader(doc, { business, title, subtitle: 'Audit and compliance register', meta: [`Records: ${rows.length}`] });
+    }
+  };
+
+  const statusCounts = rows.reduce((acc, row) => {
+    const key = row.status || 'Open';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const cardW = (pageWidth - margin * 2 - 9) / 4;
+  [['Total', rows.length], ['Open', statusCounts.Open || 0], ['In Progress', statusCounts['In Progress'] || 0], ['Closed', statusCounts.Closed || 0]].forEach(([label, value], idx) => {
+    const x = margin + idx * (cardW + 3);
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(214, 226, 242);
+    doc.roundedRect(x, y, cardW, 22, 3, 3, 'FD');
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(7, 52, 139);
+    doc.text(String(label).toUpperCase(), x + 4, y + 7);
+    doc.setFontSize(13);
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(value), x + 4, y + 16);
+  });
+  y += 32;
+
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Register detail', margin, y);
+  y += 7;
+
+  if (!rows.length) {
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(margin, y, pageWidth - margin * 2, 22, 3, 3, 'FD');
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    doc.text('No records found for this register.', margin + 5, y + 13);
+  } else {
+    rows.forEach((row, idx) => {
+      const displayTitle = safeText(row.title || row.category || row.source || row.scope || 'Untitled record');
+      const details = cols.filter(c => c !== 'title').map(c => [c, row[c]]).filter(([, value]) => String(value ?? '').trim());
+      const boxHeight = Math.max(30, 18 + Math.min(details.length, 8) * 5);
+      ensure(boxHeight + 4);
+      doc.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(margin, y, pageWidth - margin * 2, boxHeight, 3, 3, 'FD');
+
+      doc.setFont(undefined, 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${idx + 1}. ${displayTitle}`.slice(0, 88), margin + 5, y + 8);
+      const status = row.status || 'Open';
+      const statusColor = status === 'Closed' ? [22, 101, 52] : status === 'In Progress' ? [146, 64, 14] : [153, 27, 27];
+      doc.setTextColor(...statusColor);
+      doc.setFontSize(8);
+      doc.text(status, right - 5, y + 8, { align: 'right' });
+
+      let yy = y + 15;
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      details.slice(0, 8).forEach(([key, value]) => {
+        const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
+        const text = `${label}: ${safeText(value)}`;
+        const lines = doc.splitTextToSize(text, pageWidth - margin * 2 - 12).slice(0, 2);
+        lines.forEach(line => { doc.text(line, margin + 5, yy); yy += 4.5; });
+      });
+      y += boxHeight + 4;
+    });
+  }
+  drawProfessionalPdfFooter(doc, business, title);
+  doc.save(`${cleanFile(business.name || 'kajola-care')}-${cleanFile(title)}.pdf`);
+}
+function cleanFile(value) { return String(value || 'kajola-care').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase(); }
+
+function ReportsWorkspace({ business, transactions = [], clients = [], risks = [], incidents = [], complaints = [], improvements = [], audits = [], governanceReviews = [], documents = [], workers = [] }) {
   const [period, setPeriod] = useState('1m');
   const rows = getTransactionReportRows(transactions, period);
   const summary = transactionReportSummary(rows);
@@ -1448,8 +1653,15 @@ function ReportsWorkspace({ business, transactions = [], clients = [] }) {
       <div className="txn-table report-preview"><div className="txn-table-head"><span>Transaction</span><span>Participant / Category</span><span>Date</span><span>Status</span><span>Amount</span><span>Type</span></div><Records rows={recentRows} empty="No transactions found for this period." render={t => <div className="txn-row" key={t.id}><div><b>{t.description || '-'}</b><small>{t.invoiceNumber ? `Invoice ${t.invoiceNumber}` : t.type}</small></div><div><b>{t.clientId === BUSINESS_TXN_CLIENT_ID ? (t.clientName || business?.name || 'Business') : (t.clientName || 'No Participant')}</b><small>{t.category || 'General'}</small></div><time>{fmt(t.date)}</time><span className="pill">{t.status || 'pending'}</span><strong className={t.type === 'expense' ? 'negative' : 'positive'}>{t.type === 'expense' ? '-' : '+'}{money(t.amount)}</strong><span>{t.type || '-'}</span></div>} /></div>
       {rows.length > recentRows.length && <p className="report-note">Preview shows the latest {recentRows.length} transactions. The PDF includes all {rows.length} matching transactions.</p>}
     </Card>
+    <Card title="Audit & Compliance Evidence Pack" action="PDF/CSV">
+      <p>Export live registers for audit evidence: risk, complaints, incidents, improvements, internal audits, governance reviews and document control.</p>
+      <div className="report-summary-grid"><InsightCard label="Risks" value={risks.length} sub="Risk register"/><InsightCard label="Incidents" value={incidents.length} sub="Incident records"/><InsightCard label="Complaints" value={complaints.length} sub="Complaints log"/><InsightCard label="Improvements" value={improvements.length} sub="CAPA/CI actions"/></div>
+      <div className="report-actions"><ComplianceExportButton business={business} title="Risk Register" rows={risks.map(r => withParticipantName(r, clients))} cols={EXPORT_COLUMNS.risks}/><ComplianceExportButton business={business} title="Incident Register" rows={incidents.map(r => withParticipantName(r, clients))} cols={EXPORT_COLUMNS.incidents}/><ComplianceExportButton business={business} title="Complaints Register" rows={complaints.map(r => withParticipantName(r, clients))} cols={EXPORT_COLUMNS.complaints}/><ComplianceExportButton business={business} title="Continuous Improvement Register" rows={improvements} cols={EXPORT_COLUMNS.improvements}/><ComplianceExportButton business={business} title="Internal Audit Register" rows={audits} cols={EXPORT_COLUMNS.audits}/><ComplianceExportButton business={business} title="Governance Review Register" rows={governanceReviews} cols={EXPORT_COLUMNS.governanceReviews}/><ComplianceExportButton business={business} title="Evidence Library" rows={documents} cols={EXPORT_COLUMNS.documents}/></div>
+    </Card>
   </>;
 }
+function ComplianceExportButton({ business, title, rows, cols }) { return <span className="report-button-row"><button onClick={() => exportRegisterPdf({ business, title, rows, cols })}>{title} PDF</button><button onClick={() => downloadCsv(`${cleanFile(title)}.csv`, rows, cols)}>CSV</button></span>; }
+
 
 function FinanceWorkspace({ business, clients, transactions, invoices = [], form, setForm, editing, save, edit, updateStatus = () => {}, del, cancel }) {
   const [filters, setFilters] = useState({ type: 'all', status: 'all', clientId: 'all', sort: 'date_desc', query: '' });
@@ -1488,7 +1700,8 @@ function FinanceWorkspace({ business, clients, transactions, invoices = [], form
   </>;
 }
 
-function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness, saveBusiness, workers = [], setWorkers = () => {}, initialSection = 'Employees', onSectionChange = () => {} }) {
+
+function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness, saveBusiness, workers = [], setWorkers = () => {}, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, initialSection = 'Employees', onSectionChange = () => {} }) {
   const [section, setSectionState] = useState(initialSection || 'Employees');
   useEffect(() => { if (initialSection && initialSection !== section) setSectionState(initialSection); }, [initialSection]);
   const setSection = (next) => { setSectionState(next); onSectionChange(next); };
@@ -1510,6 +1723,7 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
     overdue: items.filter(i => i.tone === 'overdue').length,
     missing: items.filter(i => i.tone === 'missing').length,
   };
+  const openActionCount = risks.filter(x=>x.status !== 'Closed').length + incidents.filter(x=>x.status !== 'Closed').length + complaints.filter(x=>x.status !== 'Closed').length + improvements.filter(x=>x.status !== 'Closed').length + audits.filter(x=>x.status !== 'Closed').length;
   const updateBusinessCompliance = (id, field, value) => {
     const current = getBusinessComplianceItems(business);
     const nextItems = current.map(item => item.id === id ? { ...item, [field]: value } : item);
@@ -1521,30 +1735,21 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
     const savedWorker = normaliseWorker(workerDraft);
     if (editingWorkerId) setWorkers(prev => prev.map(w => w.id === editingWorkerId ? { ...savedWorker, id: editingWorkerId, updatedAt: new Date().toISOString() } : w));
     else setWorkers(prev => [{ ...savedWorker, id: savedWorker.id || makeId('worker'), createdAt: new Date().toISOString() }, ...prev]);
-    setWorkerDraft(emptyWorker());
-    setEditingWorkerId(null);
-    setWorkerFormOpen(false);
+    setWorkerDraft(emptyWorker()); setEditingWorkerId(null); setWorkerFormOpen(false);
   };
-  const editWorker = (worker) => {
-    setWorkerDraft(normaliseWorker(worker));
-    setEditingWorkerId(worker.id);
-    setSection('Employees');
-    setWorkerFormOpen(true);
-    window.scrollTo(0, 0);
-  };
-  const deleteWorker = (id) => {
-    if (confirm('Delete this worker profile?')) setWorkers(prev => prev.filter(w => w.id !== id));
-    if (editingWorkerId === id) { setWorkerDraft(emptyWorker()); setEditingWorkerId(null); }
-  };
+  const editWorker = (worker) => { setWorkerDraft(normaliseWorker(worker)); setEditingWorkerId(worker.id); setSection('Employees'); setWorkerFormOpen(true); window.scrollTo(0, 0); };
+  const deleteWorker = (id) => { if (confirm('Delete this worker profile?')) setWorkers(prev => prev.filter(w => w.id !== id)); if (editingWorkerId === id) { setWorkerDraft(emptyWorker()); setEditingWorkerId(null); } };
   const updateWorkerDraft = (field, value) => setWorkerDraft(prev => ({ ...prev, [field]: value }));
+
   return <>
-    <Card title="Compliance Workspace" action={`${items.length} needs review`}>
-      <p>Track employee requirements, participant plan compliance, business insurance and audit obligations.</p>
+    <Card title="Compliance Workspace" action={`${items.length + openActionCount} needs review`}>
+      <p>Run business compliance from daily records. Each register below becomes audit evidence automatically: risks, incidents, complaints, CAPA, internal audits, governance reviews and document control.</p>
+      <div className="compliance-tabs">{COMPLIANCE_NAV.map(tab => <button key={tab} className={section === tab ? 'active' : ''} onClick={() => setSection(tab)}>{tab}</button>)}</div>
       <div className="compliance-grid">
         <InsightCard label="Current" value={counts.current} sub="Green items" />
         <InsightCard label="Due Soon" value={counts.due} sub="Within 30 days" />
         <InsightCard label="Overdue" value={counts.overdue} sub="Past due" />
-        <InsightCard label="Missing" value={counts.missing} sub="No date provided" />
+        <InsightCard label="Open Actions" value={openActionCount} sub="Registers not closed" />
       </div>
     </Card>
 
@@ -1552,61 +1757,68 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
       <Card title={editingWorkerId ? 'Edit Worker' : 'Add Worker'} action={<button type="button" className="text-link" onClick={() => setWorkerFormOpen(open => !open)}>{workerFormOpen ? 'Collapse' : '+ Add Worker'}</button>}>
         {!workerFormOpen && <p className="muted">Worker form is collapsed. Open it only when adding or editing an employee.</p>}
         {workerFormOpen && <>
-          <div className="grid">
-            <Field label="Worker Name" value={workerDraft.name} onChange={e => updateWorkerDraft('name', e.target.value)} />
-            <Field label="Role" value={workerDraft.role} onChange={e => updateWorkerDraft('role', e.target.value)} />
-            <Field label="Email" type="email" value={workerDraft.email} onChange={e => updateWorkerDraft('email', e.target.value)} />
-            <Field label="Phone" value={workerDraft.phone} onChange={e => updateWorkerDraft('phone', e.target.value)} />
-          </div>
+          <div className="grid"><Field label="Worker Name" value={workerDraft.name} onChange={e => updateWorkerDraft('name', e.target.value)} /><Field label="Role" value={workerDraft.role} onChange={e => updateWorkerDraft('role', e.target.value)} /><Field label="Email" type="email" value={workerDraft.email} onChange={e => updateWorkerDraft('email', e.target.value)} /><Field label="Phone" value={workerDraft.phone} onChange={e => updateWorkerDraft('phone', e.target.value)} /></div>
           <h4 className="section-label">Worker compliance dates</h4>
-          <div className="grid">
-            {DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => <Field key={item.key} type="date" label={`${item.label}${item.optional ? ' (optional)' : ''}`} value={workerDraft[item.key] || ''} onChange={e => updateWorkerDraft(item.key, e.target.value)} />)}
-            <Field label="Notes" multiline value={workerDraft.notes || ''} onChange={e => updateWorkerDraft('notes', e.target.value)} />
-          </div>
-          <button className="primary" onClick={saveWorker}>{editingWorkerId ? 'Update Worker' : 'Save Worker'}</button>
-          {editingWorkerId && <button onClick={() => { setWorkerDraft(emptyWorker()); setEditingWorkerId(null); setWorkerFormOpen(false); }}>Cancel Edit</button>}
+          <div className="grid">{DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => <Field key={item.key} type="date" label={`${item.label}${item.optional ? ' (optional)' : ''}`} value={workerDraft[item.key] || ''} onChange={e => updateWorkerDraft(item.key, e.target.value)} />)}<Field label="Notes" multiline value={workerDraft.notes || ''} onChange={e => updateWorkerDraft('notes', e.target.value)} /></div>
+          <button className="primary" onClick={saveWorker}>{editingWorkerId ? 'Update Worker' : 'Save Worker'}</button>{editingWorkerId && <button onClick={() => { setWorkerDraft(emptyWorker()); setEditingWorkerId(null); setWorkerFormOpen(false); }}>Cancel Edit</button>}
         </>}
       </Card>
-      <Card title="Employees Compliance Register">
-        <div className="client-table compliance-register"><div className="client-table-head"><span>Worker</span><span>Role</span><span>Critical Status</span><span>Due / Missing Items</span><span>Actions</span></div>
-          <Records rows={workerRows} empty="No workers added yet." render={row => {
-            const reviewItems = row.items.filter(item => ['due','overdue','missing'].includes(item.status.tone));
-            return <div className="client-table-row" key={row.worker.id}>
-              <div><b>{row.worker.name}</b><small>{row.worker.email || row.worker.phone || 'No contact details'}</small></div>
-              <div><b>{row.worker.role || '-'}</b><small>{row.worker.notes || 'No notes'}</small></div>
-              <div><span className={`traffic-pill ${row.overall.tone}`}>{row.overall.label}</span><small>{statusSummary(row.items.find(i => i.status.sort === row.overall.sort)?.date || '')}</small></div>
-              <div><small>{reviewItems.length ? reviewItems.slice(0, 3).map(i => i.label).join(', ') : 'All current'}</small></div>
-              <div className="actions"><button onClick={() => editWorker(row.worker)}>Edit</button><button className="danger" onClick={() => deleteWorker(row.worker.id)}>Delete</button></div>
-            </div>;
-          }} />
-        </div>
-      </Card>
+      <Card title="Employees Compliance Register"><div className="client-table compliance-register"><div className="client-table-head"><span>Worker</span><span>Role</span><span>Critical Status</span><span>Due / Missing Items</span><span>Actions</span></div><Records rows={workerRows} empty="No workers added yet." render={row => { const reviewItems = row.items.filter(item => ['due','overdue','missing'].includes(item.status.tone)); return <div className="client-table-row" key={row.worker.id}><div><b>{row.worker.name}</b><small>{row.worker.email || row.worker.phone || 'No contact details'}</small></div><div><b>{row.worker.role || '-'}</b><small>{row.worker.notes || 'No notes'}</small></div><div><span className={`traffic-pill ${row.overall.tone}`}>{row.overall.label}</span><small>{statusSummary(row.items.find(i => i.status.sort === row.overall.sort)?.date || '')}</small></div><div><small>{reviewItems.length ? reviewItems.slice(0, 3).map(i => i.label).join(', ') : 'All current'}</small></div><div className="actions"><button onClick={() => editWorker(row.worker)}>Edit</button><button className="danger" onClick={() => deleteWorker(row.worker.id)}>Delete</button></div></div>; }} /></div></Card>
     </>}
 
-    {section === 'Participants' && <Card title="Participant Compliance">
-      <div className="compliance-table"><div className="compliance-table-head"><span>Participant</span><span>Plan Review</span><span>Consent</span><span>Agreement</span><span>Risk Review</span><span>Status</span></div>
-        <Records rows={participantRows} empty="No participants yet." render={row => <div className="compliance-table-row" key={row.client.id}>
-          <div><b>{row.client.name}</b><small>{row.client.ndisNumber || 'NDIS missing'}</small></div>
-          {row.items.map(item => <ComplianceDateCell key={item.key} item={item} />)}
-          <span className={`traffic-pill ${row.overall.tone}`}>{row.overall.label}</span>
-        </div>} />
-      </div>
-    </Card>}
+    {section === 'Participants' && <Card title="Participant Compliance"><div className="compliance-table"><div className="compliance-table-head"><span>Participant</span><span>Plan Review</span><span>Consent</span><span>Agreement</span><span>Risk Review</span><span>Status</span></div><Records rows={participantRows} empty="No participants yet." render={row => <div className="compliance-table-row" key={row.client.id}><div><b>{row.client.name}</b><small>{row.client.ndisNumber || 'NDIS missing'}</small></div>{row.items.map(item => <ComplianceDateCell key={item.key} item={item} />)}<span className={`traffic-pill ${row.overall.tone}`}>{row.overall.label}</span></div>} /></div></Card>}
 
-    {section === 'Business' && <Card title="Business Compliance" action={<button className="primary" onClick={saveCompliance}>Save Compliance</button>}>
-      <p>Maintain insurance and audit due dates for the business. Worker checks and mandatory training are managed under Employees Compliance.</p>
-      <div className="business-compliance-list">
-        {['Insurance','Audits'].map(group => <section key={group} className="business-compliance-group"><h4>{group}</h4>{businessRows.filter(item => item.group === group).map(item => <div className="business-compliance-row" key={item.id}>
-          <label><span>Item</span><input value={item.label} onChange={e => updateBusinessCompliance(item.id, 'label', e.target.value)} /></label>
-          <label><span>Due date</span><input type="date" value={item.dueDate} onChange={e => updateBusinessCompliance(item.id, 'dueDate', e.target.value)} /></label>
-          <label><span>Notes</span><input value={item.notes || ''} onChange={e => updateBusinessCompliance(item.id, 'notes', e.target.value)} /></label>
-          <span className={`traffic-pill ${item.status.tone}`}>{item.status.label}</span>
-        </div>)}</section>)}
-      </div>
-    </Card>}
+    {section === 'Business' && <Card title="Business Compliance" action={<button className="primary" onClick={saveCompliance}>Save Compliance</button>}><p>Maintain insurance and audit due dates for the business. Worker checks and mandatory training are managed under Employees Compliance.</p><div className="business-compliance-list">{['Insurance','Audits'].map(group => <section key={group} className="business-compliance-group"><h4>{group}</h4>{businessRows.filter(item => item.group === group).map(item => <div className="business-compliance-row" key={item.id}><label><span>Item</span><input value={item.label} onChange={e => updateBusinessCompliance(item.id, 'label', e.target.value)} /></label><label><span>Due date</span><input type="date" value={item.dueDate} onChange={e => updateBusinessCompliance(item.id, 'dueDate', e.target.value)} /></label><label><span>Notes</span><input value={item.notes || ''} onChange={e => updateBusinessCompliance(item.id, 'notes', e.target.value)} /></label><span className={`traffic-pill ${item.status.tone}`}>{item.status.label}</span></div>)}</section>)}</div></Card>}
 
+    {section === 'Risks' && <RecordRegister business={business} title="Risk Register" type="risks" rows={risks} setRows={setRisks} clients={clients} fields={['title','participantId','category','likelihood','impact','rating','treatment','owner','reviewDate','status','evidence']} />}
+    {section === 'Incidents' && <RecordRegister business={business} title="Incident Register" type="incidents" rows={incidents} setRows={setIncidents} clients={clients} fields={['title','participantId','date','severity','reportable','immediateAction','followUp','status','evidence']} />}
+    {section === 'Complaints' && <RecordRegister business={business} title="Complaints Register" type="complaints" rows={complaints} setRows={setComplaints} clients={clients} fields={['title','participantId','date','receivedBy','category','details','resolution','status','evidence']} />}
+    {section === 'Improvements' && <RecordRegister business={business} title="Continuous Improvement Register" type="improvements" rows={improvements} setRows={setImprovements} clients={clients} fields={['title','source','owner','dueDate','action','outcome','status','evidence']} />}
+    {section === 'Audits' && <RecordRegister business={business} title="Internal Audit Register" type="audits" rows={audits} setRows={setAudits} clients={clients} fields={['title','date','scope','findings','actions','status','evidence']} />}
+    {section === 'Governance' && <RecordRegister business={business} title="Governance Review Register" type="governanceReviews" rows={governanceReviews} setRows={setGovernanceReviews} clients={clients} fields={['title','date','attendees','summary','decisions','actions','nextReviewDate','status','evidence']} />}
+    {section === 'Documents' && <RecordRegister business={business} title="Evidence Library & Document Control" type="documents" rows={documents} setRows={setDocuments} clients={clients} fields={['title','category','owner','reviewDate','version','location','status','notes']} />}
     {section === 'Items' && <Card title="Compliance Items" action={`${items.length} due`}><ComplianceItemsReport items={items} empty="No compliance items due." /></Card>}
   </>;
+}
+
+function RecordRegister({ business = {}, title, type, rows = [], setRows = () => {}, clients = [], fields = [] }) {
+  const [draft, setDraft] = useState(emptyRecordFor(type));
+  const [editingId, setEditingId] = useState(null);
+  const [open, setOpen] = useState(false);
+  const setField = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
+  const save = () => {
+    if (!String(draft.title || '').trim()) return alert('Please enter a title.');
+    const enriched = withParticipantName({ ...draft, updatedAt: new Date().toISOString() }, clients);
+    if (editingId) setRows(prev => prev.map(r => r.id === editingId ? { ...enriched, id: editingId } : r));
+    else setRows(prev => [{ ...enriched, id: enriched.id || makeId(type), createdAt: new Date().toISOString() }, ...prev]);
+    setDraft(emptyRecordFor(type)); setEditingId(null); setOpen(false);
+  };
+  const edit = (row) => { setDraft({ ...emptyRecordFor(type), ...row }); setEditingId(row.id); setOpen(true); window.scrollTo(0, 0); };
+  const del = (id) => { if (confirm('Delete this record?')) setRows(prev => prev.filter(r => r.id !== id)); };
+  const statusCounts = rows.reduce((acc, row) => { const key = row.status || 'Open'; acc[key] = (acc[key] || 0) + 1; return acc; }, {});
+  const cols = EXPORT_COLUMNS[type] || fields;
+  return <>
+    <Card title={title} action={<button type="button" className="text-link" onClick={() => setOpen(v => !v)}>{open ? 'Collapse' : '+ Add Record'}</button>}>
+      <div className="report-summary-grid"><InsightCard label="Total" value={rows.length} sub="Records"/><InsightCard label="Open" value={statusCounts.Open || 0} sub="Needs action"/><InsightCard label="In Progress" value={statusCounts['In Progress'] || 0} sub="Being handled"/><InsightCard label="Closed" value={statusCounts.Closed || 0} sub="Completed"/></div>
+      <div className="report-actions"><button onClick={() => exportRegisterPdf({ business, title, rows: rows.map(r => withParticipantName(r, clients)), cols })}>Export PDF</button><button onClick={() => downloadCsv(`${cleanFile(title)}.csv`, rows.map(r => withParticipantName(r, clients)), cols)}>Export CSV</button></div>
+      {!open && <p className="muted">Use this register during normal operations so the audit trail is ready without extra paperwork.</p>}
+      {open && <div className="grid">{fields.map(field => <RegisterField key={field} field={field} value={draft[field] || ''} onChange={value => setField(field, value)} clients={clients} />)}</div>}
+      {open && <><button className="primary" onClick={save}>{editingId ? 'Update Record' : 'Save Record'}</button>{editingId && <button onClick={() => { setDraft(emptyRecordFor(type)); setEditingId(null); setOpen(false); }}>Cancel Edit</button>}</>}
+    </Card>
+    <Card title={`${title} Records`} action={`${rows.length} saved`}><div className="client-table compliance-register"><div className="client-table-head"><span>Record</span><span>Participant / Owner</span><span>Date / Review</span><span>Status</span><span>Actions</span></div><Records rows={rows} empty="No records yet." render={row => <div className="client-table-row" key={row.id}><div><b>{row.title}</b><small>{row.category || row.source || row.scope || row.version || 'General'}</small></div><div><b>{withParticipantName(row, clients).participantName || row.owner || row.receivedBy || '-'}</b><small>{row.evidence || row.location || row.notes || 'No evidence link noted'}</small></div><div><b>{fmt(row.date || row.reviewDate || row.dueDate || row.nextReviewDate)}</b><small>{row.reviewDate ? `Review ${fmt(row.reviewDate)}` : row.dueDate ? `Due ${fmt(row.dueDate)}` : ''}</small></div><span className={`traffic-pill ${row.status === 'Closed' ? 'current' : row.status === 'In Progress' ? 'due' : 'overdue'}`}>{row.status || 'Open'}</span><div className="actions"><button onClick={() => edit(row)}>Edit</button><button className="danger" onClick={() => del(row.id)}>Delete</button></div></div>} /></div></Card>
+  </>;
+}
+
+function RegisterField({ field, value, onChange, clients }) {
+  const label = field.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
+  if (field === 'participantId') return <label><span>Participant</span><select value={value} onChange={e => onChange(e.target.value)}><option value="">No participant / business-wide</option>{clients.filter(c => !c.archived).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>;
+  if (['status'].includes(field)) return <label><span>{label}</span><select value={value || 'Open'} onChange={e => onChange(e.target.value)}><option>Open</option><option>In Progress</option><option>Closed</option></select></label>;
+  if (field === 'likelihood') return <label><span>{label}</span><select value={value} onChange={e => onChange(e.target.value)}><option>Rare</option><option>Possible</option><option>Likely</option><option>Almost Certain</option></select></label>;
+  if (field === 'impact' || field === 'rating' || field === 'severity') return <label><span>{label}</span><select value={value} onChange={e => onChange(e.target.value)}><option>Low</option><option>Moderate</option><option>Medium</option><option>High</option><option>Critical</option></select></label>;
+  if (field === 'reportable') return <label><span>NDIS Reportable?</span><select value={value || 'No'} onChange={e => onChange(e.target.value)}><option>No</option><option>Unsure</option><option>Yes</option></select></label>;
+  if (field.toLowerCase().includes('date')) return <Field type="date" label={label} value={value} onChange={e => onChange(e.target.value)} />;
+  if (['treatment','immediateAction','followUp','details','resolution','action','outcome','findings','actions','summary','decisions','notes','evidence','location'].includes(field)) return <Field label={label} multiline value={value} onChange={e => onChange(e.target.value)} />;
+  return <Field label={label} value={value} onChange={e => onChange(e.target.value)} />;
 }
 
 function ComplianceItemsReport({ items, compact = false, empty = 'No compliance items due.' }) {
@@ -1707,6 +1919,7 @@ function Settings({ pricingItems, business, setBusiness, saveBusiness, clients, 
 
 function NdisPricingManager({ items, onChange, onSave }) {
   const [editingRates, setEditingRates] = useState(false);
+  const [query, setQuery] = useState('');
   const pricingItems = getPricingItems({ pricingItems: items });
   const groups = [...new Set(pricingItems.map(item => item.group || 'Custom Items'))];
   const filtered = pricingItems.filter(item => `${item.group} ${item.itemNumber} ${item.label} ${item.unitType}`.toLowerCase().includes(query.toLowerCase()));
