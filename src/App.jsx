@@ -732,12 +732,7 @@ export default function App() {
   return <><div className="shell desktop-shell">
     <aside className="sidebar">
       <div className="brand"><BrandMark /><div><BrandWordmark /><p>Care • Connect • Empower</p></div></div>
-      <nav>{TABS.map(t => t === 'Compliance' ? <div className="nav-compliance" key={t}>
-        <button className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>
-        <div className="nav-flyout" role="menu" aria-label="Compliance sections">
-          {[['Employees','Employee compliance'],['Participants','Participant compliance'],['Business','Business compliance'],['Risks','Risk register'],['Incidents','Incident register'],['Complaints','Complaints register'],['Improvements','Continuous improvement'],['Audits','Internal audits'],['Governance','Governance reviews'],['Documents','Evidence library'],['Items','Compliance items']].map(([sectionName, desc]) => <button key={sectionName} onClick={() => openComplianceSection(sectionName)}><b>{sectionName}</b><small>{desc}</small></button>)}
-        </div>
-      </div> : <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
+      <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
       <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'Manual cloud sync ready' : 'Cloud sync disabled'}</small></div>
       <div className="profile-card"><div className="avatar">{(user.email || 'KC').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
