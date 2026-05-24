@@ -107,7 +107,7 @@ const normaliseBusiness = (business = {}) => {
     businessCompliance: getBusinessComplianceItems(merged),
   };
 };
-const SECTION_KEYS = ['business', 'clients', 'invoices', 'transactions', 'workers', 'risks', 'incidents', 'complaints', 'improvements', 'audits', 'governanceReviews', 'documents'];
+const SECTION_KEYS = ['business', 'clients', 'invoices', 'transactions', 'workers', 'risks', 'incidents', 'complaints', 'improvements', 'audits', 'auditReports', 'governanceReviews', 'documents'];
 const sectionUpdatedAt = (payload, section) => payload?._meta?.sectionsUpdatedAt?.[section] || '';
 const isMeaningfulBusiness = (business = {}) => {
   const b = normaliseBusiness(business);
@@ -139,6 +139,7 @@ const normalisePayload = (payload = {}) => {
     complaints: Array.isArray(payload.complaints) ? payload.complaints : [],
     improvements: Array.isArray(payload.improvements) ? payload.improvements : [],
     audits: Array.isArray(payload.audits) ? payload.audits : [],
+    auditReports: Array.isArray(payload.auditReports) ? payload.auditReports : [],
     governanceReviews: Array.isArray(payload.governanceReviews) ? payload.governanceReviews : [],
     documents: Array.isArray(payload.documents) ? payload.documents : [],
     _meta: normaliseMeta(payload),
@@ -146,7 +147,7 @@ const normalisePayload = (payload = {}) => {
 };
 const stripMeta = (payload = {}) => {
   const p = normalisePayload(payload);
-  return { business: p.business, clients: p.clients, invoices: p.invoices, transactions: p.transactions, workers: p.workers, risks: p.risks, incidents: p.incidents, complaints: p.complaints, improvements: p.improvements, audits: p.audits, governanceReviews: p.governanceReviews, documents: p.documents };
+  return { business: p.business, clients: p.clients, invoices: p.invoices, transactions: p.transactions, workers: p.workers, risks: p.risks, incidents: p.incidents, complaints: p.complaints, improvements: p.improvements, audits: p.audits, auditReports: p.auditReports, governanceReviews: p.governanceReviews, documents: p.documents };
 };
 const mergePayloads = (localPayload = {}, cloudPayload = {}) => {
   const local = normalisePayload(localPayload);
@@ -270,6 +271,7 @@ export default function App() {
   const [complaints, setComplaints] = useState([]);
   const [improvements, setImprovements] = useState([]);
   const [audits, setAudits] = useState([]);
+  const [auditReports, setAuditReports] = useState([]);
   const [governanceReviews, setGovernanceReviews] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [business, setBusiness] = useState(EMPTY_BUSINESS);
@@ -334,11 +336,12 @@ export default function App() {
     setComplaints(next.complaints);
     setImprovements(next.improvements);
     setAudits(next.audits);
+    setAuditReports(next.auditReports);
     setGovernanceReviews(next.governanceReviews);
     setDocuments(next.documents);
   };
 
-  const currentPayload = () => normalisePayload({ business, clients, invoices, transactions, workers, risks, incidents, complaints, improvements, audits, governanceReviews, documents, _meta: { sectionsUpdatedAt: sectionUpdatedAtRef.current } });
+  const currentPayload = () => normalisePayload({ business, clients, invoices, transactions, workers, risks, incidents, complaints, improvements, audits, auditReports, governanceReviews, documents, _meta: { sectionsUpdatedAt: sectionUpdatedAtRef.current } });
   const serialisePayload = (data) => JSON.stringify(normalisePayload(data || currentPayload()));
   const payloadWithFreshMeta = () => {
     const data = currentPayload();
@@ -352,9 +355,9 @@ export default function App() {
     try {
       const raw = localStorage.getItem(storageKeyFor(user));
       if (raw) applyPayload(JSON.parse(raw));
-      else applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } });
+      else applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], auditReports: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } });
     } catch {
-      applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } });
+      applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], auditReports: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } });
     } finally {
       setStorageLoaded(true);
     }
@@ -367,7 +370,7 @@ export default function App() {
     if (snapshot === lastLocalSnapshotRef.current) return;
     lastLocalSnapshotRef.current = snapshot;
     localStorage.setItem(storageKeyFor(user), snapshot);
-  }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers, risks, incidents, complaints, improvements, audits, governanceReviews, documents]);
+  }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers, risks, incidents, complaints, improvements, audits, auditReports, governanceReviews, documents]);
 
   // Cloud sync is manual only. Local changes are still saved immediately to this device.
   useEffect(() => {
@@ -743,10 +746,10 @@ export default function App() {
       {active === 'Participants' && <Clients clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={() => { setEditingClient(null); setClientForm(emptyClient); }}/>} 
       {active === 'Invoices' && <Invoices pricingItems={pricingItems} clients={clients.filter(c => !c.archived)} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={() => setInvoiceForm(p => ({ ...p, lines: [...p.lines, emptyLine()] }))} removeLine={lid => setInvoiceForm(p => p.lines.length === 1 ? p : ({ ...p, lines: p.lines.filter(l => l.id !== lid) }))} save={saveInvoice} edit={editInvoice} del={id => { setInvoices(p => p.filter(i => i.id !== id)); setTransactions(p => p.filter(t => t.invoiceId !== id)); }} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={() => { setEditingInvoice(null); setInvoiceForm(emptyInvoice()); }}/>} 
       {active === 'Finance' && <FinanceWorkspace business={business} clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} updateStatus={updateTxnStatus} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
-      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} risks={risks} setRisks={setRisks} incidents={incidents} setIncidents={setIncidents} complaints={complaints} setComplaints={setComplaints} improvements={improvements} setImprovements={setImprovements} audits={audits} setAudits={setAudits} governanceReviews={governanceReviews} setGovernanceReviews={setGovernanceReviews} documents={documents} setDocuments={setDocuments} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
-      {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} risks={risks} incidents={incidents} complaints={complaints} improvements={improvements} audits={audits} governanceReviews={governanceReviews} documents={documents} workers={workers} />}
+      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} risks={risks} setRisks={setRisks} incidents={incidents} setIncidents={setIncidents} complaints={complaints} setComplaints={setComplaints} improvements={improvements} setImprovements={setImprovements} audits={audits} setAudits={setAudits} auditReports={auditReports} setAuditReports={setAuditReports} governanceReviews={governanceReviews} setGovernanceReviews={setGovernanceReviews} documents={documents} setDocuments={setDocuments} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
+      {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} risks={risks} incidents={incidents} complaints={complaints} improvements={improvements} audits={audits} auditReports={auditReports} governanceReviews={governanceReviews} documents={documents} workers={workers} />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
-      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
+      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setAuditReports([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
     </main>
   </div>
   <MobileShell
@@ -778,6 +781,8 @@ export default function App() {
     setImprovements={setImprovements}
     audits={audits}
     setAudits={setAudits}
+    auditReports={auditReports}
+    setAuditReports={setAuditReports}
     governanceReviews={governanceReviews}
     setGovernanceReviews={setGovernanceReviews}
     documents={documents}
@@ -817,7 +822,7 @@ export default function App() {
     cancelTxn={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}
     setBusiness={setBusiness}
     saveBusiness={saveBusiness}
-    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>}
+    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setAuditReports([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>}
   />
 </>;
 }
@@ -830,7 +835,7 @@ function BrandMark({ compact = false }) {
   return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/icons/kajola-care-logo.png" alt="Kajola Care" /></div>;
 }
 
-function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, auditReports = [], setAuditReports = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const activeClients = clients.filter(c => !c.archived);
@@ -851,8 +856,8 @@ function MobileShell({ active, setActive, complianceSection, setComplianceSectio
       {active === 'Participants' && <MobileParticipants clients={clients} form={clientForm} setForm={setClientForm} editing={editingClient} save={saveClient} edit={editClient} archive={archiveClient} del={deleteClient} cancel={cancelClient} />}
       {active === 'Invoices' && <MobileInvoices pricingItems={pricingItems} clients={activeClients} invoices={invoices} form={invoiceForm} setForm={setInvoiceForm} editing={editingInvoice} setLine={setLine} selectItem={selectItem} addLine={addLine} removeLine={removeLine} save={saveInvoice} edit={editInvoice} del={deleteInvoice} exportPDF={exportPDF} onStatusChange={updateInvoiceStatus} cancel={cancelInvoice} />}
       {active === 'Finance' && <MobileFinance business={business} clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
-      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} risks={risks} setRisks={setRisks} incidents={incidents} setIncidents={setIncidents} complaints={complaints} setComplaints={setComplaints} improvements={improvements} setImprovements={setImprovements} audits={audits} setAudits={setAudits} governanceReviews={governanceReviews} setGovernanceReviews={setGovernanceReviews} documents={documents} setDocuments={setDocuments} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
-      {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} risks={risks} incidents={incidents} complaints={complaints} improvements={improvements} audits={audits} governanceReviews={governanceReviews} documents={documents} workers={workers} />}
+      {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} risks={risks} setRisks={setRisks} incidents={incidents} setIncidents={setIncidents} complaints={complaints} setComplaints={setComplaints} improvements={improvements} setImprovements={setImprovements} audits={audits} setAudits={setAudits} auditReports={auditReports} setAuditReports={setAuditReports} governanceReviews={governanceReviews} setGovernanceReviews={setGovernanceReviews} documents={documents} setDocuments={setDocuments} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
+      {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} risks={risks} incidents={incidents} complaints={complaints} improvements={improvements} audits={audits} auditReports={auditReports} governanceReviews={governanceReviews} documents={documents} workers={workers} />}
       {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
       {active === 'Settings' && <div className="mobile-settings"><MobileMore setActive={setActive} />{settings}</div>}
     </main>
@@ -1466,7 +1471,7 @@ const EXPORT_COLUMNS = {
   governanceReviews: ['title','date','attendees','summary','decisions','actions','nextReviewDate','status','evidence'],
   documents: ['title','category','owner','reviewDate','version','location','status','notes'],
 };
-const COMPLIANCE_NAV = ['Employees','Participants','Business','Risks','Incidents','Complaints','Improvements','Audits','Governance','Documents','Items'];
+const COMPLIANCE_NAV = ['Employees','Participants','Business','Risks','Incidents','Complaints','Improvements','Audits','Audit Reports','Governance','Documents','Items'];
 const INTERNAL_AUDIT_AREAS = [
   'Person-centred Supports Policy & Procedure',
   'Individual Values and Beliefs Policy & Procedure',
@@ -1494,6 +1499,148 @@ const DEFAULT_INTERNAL_AUDIT_SCHEDULE = INTERNAL_AUDIT_AREAS.map((auditArea, ind
   status: 'Open',
   createdAt: new Date().toISOString(),
 }));
+
+const INTERNAL_AUDIT_TEMPLATE = [
+  { division: 'Division 1 – Rights and Responsibilities', area: 'Person-centred supports', outcome: 'Each participant accesses supports that promote, uphold and respect their legal and human rights and is enabled to exercise informed choice and control.', questions: [
+    'Does each participant understand their legal and human rights?',
+    'Are participant legal and human rights incorporated into everyday practices?',
+    'Is communication about support provision provided in the mode, language and terms the participant is most likely to understand?',
+    'Is each participant supported to engage family, friends and chosen community as directed?'
+  ]},
+  { division: 'Division 1 – Rights and Responsibilities', area: 'Individual values and beliefs', outcome: 'Each participant accesses supports that respect their culture, diversity, values and beliefs.', questions: [
+    'Are participant culture, diversity, values and beliefs identified and responded to at their direction?',
+    'Is each participant supported to practice their culture, values and beliefs while accessing supports?'
+  ]},
+  { division: 'Division 1 – Rights and Responsibilities', area: 'Privacy and Dignity', outcome: 'Each participant accesses supports that respect and protect their dignity and right to privacy.', questions: [
+    'Are consistent processes and practices in place to protect privacy and dignity?',
+    'Is each participant advised of confidentiality policies in an understandable way?',
+    'Does each participant understand and agree to what personal information is collected and why?'
+  ]},
+  { division: 'Division 1 – Rights and Responsibilities', area: 'Independence and Informed Choice', outcome: 'Each participant is supported to make informed choices, exercise control and maximise independence.', questions: [
+    'Is active decision-making and individual choice supported for each participant?',
+    'Is dignity of risk supported when participants make decisions?',
+    'Is participant autonomy respected, including rights to intimacy and sexual expression?',
+    'Does each participant have enough time to consider options and seek advice?',
+    'Is each participant supported to access an advocate of their choosing?'
+  ]},
+  { division: 'Division 1 – Rights and Responsibilities', area: 'Violence, Abuse, Neglect, Exploitation and Discrimination', outcome: 'Each participant accesses supports free from violence, abuse, neglect, exploitation or discrimination.', questions: [
+    'Are policies, procedures and practices in place to actively prevent violence, abuse, neglect, exploitation or discrimination?',
+    'Is advocacy information provided and access facilitated where allegations are made?',
+    'Are allegations and incidents acted upon, recorded, reviewed and used to prevent recurrence?'
+  ]},
+  { division: 'Division 2 – Governance and Operational Management', area: 'Governance and Operational Management', outcome: 'Participant support is overseen by robust governance and operational management systems proportionate to the provider.', questions: [
+    'Is participant input used in governance, policy and process development?',
+    'Is a defined structure implemented to meet financial, legislative, regulatory and contractual responsibilities?',
+    'Are governance skills and training needs identified and addressed?',
+    'Does strategic and business planning consider legislation, risks, NDIS requirements, participant and worker needs?',
+    'Is management performance monitored to drive continuous improvement?',
+    'Are roles, responsibilities, authority and accountability clearly defined?',
+    'Is delegated responsibility documented for absence of usual position holders?',
+    'Are conflicts of interest proactively managed and documented?'
+  ]},
+  { division: 'Division 2 – Governance and Operational Management', area: 'Risk Management', outcome: 'Risks to participants, workers and the provider are identified and managed.', questions: [
+    'Are participant, financial, WHS and support delivery risks identified, analysed, prioritised and treated?',
+    'Is a documented risk management system in place and proportionate?',
+    'Does the risk system cover incidents, complaints, finance, governance, HR, information, WHS and emergency management?',
+    'Are infection prevention and outbreak controls included where relevant?',
+    'Are supports provided consistently with the risk management system?',
+    'Is appropriate insurance in place?'
+  ]},
+  { division: 'Division 2 – Governance and Operational Management', area: 'Quality Management', outcome: 'Participants benefit from a quality management system that promotes continuous improvement.', questions: [
+    'Is a quality management system maintained and reviewed?',
+    'Is a documented internal audit program/schedule in place?',
+    'Does quality management use outcomes, risk data, evidence-informed practice and feedback?'
+  ]},
+  { division: 'Division 2 – Governance and Operational Management', area: 'Information Management', outcome: 'Participant information is identifiable, accurate, current, confidential and accessible.', questions: [
+    'Is consent obtained to collect, use, retain and disclose participant information?',
+    'Is each participant informed how information is stored, used, accessed, corrected or consent withdrawn?',
+    'Is an information management system maintained with accurate and timely records?',
+    'Are documents managed with appropriate access, security, transfer, retention, destruction and disposal processes?'
+  ]},
+  { division: 'Division 2 – Governance and Operational Management', area: 'Feedback and Complaints Management', outcome: 'Feedback and complaints are welcomed, acknowledged, respected and well managed.', questions: [
+    'Is a complaints management and resolution system maintained consistent with procedural fairness and NDIS rules?',
+    'Is each participant told how to provide feedback or complain, including external pathways and advocacy?',
+    'Is continuous improvement demonstrated through complaint and feedback review?',
+    'Are workers aware of, trained in and compliant with complaints procedures?'
+  ]},
+  { division: 'Division 2 – Governance and Operational Management', area: 'Incident Management', outcome: 'Participants are safeguarded by an incident management system that acknowledges, responds to and learns from incidents.', questions: [
+    'Is an incident management system maintained and compliant with NDIS incident rules?',
+    'Is each participant provided information about incident management?',
+    'Is continuous improvement in incident management demonstrated?',
+    'Are workers aware of, trained in and compliant with incident procedures?'
+  ]},
+  { division: 'Division 2 – Governance and Operational Management', area: 'Human Resource Management', outcome: 'Participant support needs are met by competent workers with suitable qualifications, expertise and experience.', questions: [
+    'Are skills, knowledge, responsibilities, scope and limitations documented for each position?',
+    'Are worker checks, qualifications and experience records maintained?',
+    'Is orientation and induction completed including NDIS worker orientation?',
+    'Is training identified, planned, recorded and evaluated?',
+    'Are supervision, support and resources available to workers?',
+    'Is worker performance managed, developed and documented?',
+    'Are emergency/disaster capable workers identified and workforce disruption plans in place?',
+    'Is infection prevention and control training undertaken and refreshed?',
+    'Are worker contact details and secondary employment details recorded and current?'
+  ]},
+  { division: 'Division 2 – Governance and Operational Management', area: 'Continuity of Supports', outcome: 'Each participant has timely and appropriate support without interruption.', questions: [
+    'Are day-to-day operations managed to avoid disruption and ensure continuity?',
+    'Is a suitably qualified or experienced person available for worker absence or vacancy?',
+    'Are supports planned with each participant and preferences provided to workers before service starts?',
+    'Are arrangements in place to provide support without interruption throughout the service agreement?',
+    'Are alternative arrangements explained and agreed when changes or interruptions are unavoidable?',
+    'Are disaster preparedness measures in place for critical supports?'
+  ]},
+  { division: 'Division 2 – Governance and Operational Management', area: 'Emergency and disaster management', outcome: 'Emergency and disaster planning mitigates risks and ensures continuity of critical supports.', questions: [
+    'Are measures in place to continue critical supports before, during and after an emergency or disaster?',
+    'Do measures include preparation, support changes, rapid response and communication to workers and support networks?',
+    'Does the governing body develop, consult on and implement emergency and disaster plans?',
+    'Do plans guide governance response and oversight?',
+    'Are plans tested, adjusted and periodically reviewed?',
+    'Are plans communicated to workers, participants and support networks?',
+    'Is each worker trained in plan implementation?'
+  ]},
+  { division: 'Division 3 – Provision of Supports', area: 'Access to Supports', outcome: 'Each participant accesses appropriate supports that meet their needs, goals and preferences.', questions: [
+    'Are available supports, access criteria and costs clearly defined, documented and communicated?',
+    'Are reasonable adjustments made and monitored so support environments remain fit for purpose?',
+    'Is each participant supported to understand circumstances where supports can be withdrawn?'
+  ]},
+  { division: 'Division 3 – Provision of Supports', area: 'Support Planning', outcome: 'Each participant is actively involved in support planning and reviews.', questions: [
+    'Is support planning completed with participant consent and support network involvement where appropriate?',
+    'Are risk assessments regularly undertaken, documented and treated in support plans?',
+    'Are risk strategies reviewed with each participant and changed when required?',
+    'Are support plans reviewed annually or earlier when needs change?',
+    'Are plans updated when progress differs from expected outcomes?',
+    'Are support plans provided in accessible language and available to participants and workers?',
+    'Are support plans communicated to support networks, providers and agencies with consent?',
+    'Do plans include preventative health measures where required?',
+    'Do plans incorporate emergency and disaster response arrangements?'
+  ]},
+  { division: 'Division 3 – Provision of Supports', area: 'Service Agreements with Participants', outcome: 'Each participant understands chosen supports and how they will be provided.', questions: [
+    'Are service agreements developed collaboratively and do they establish expectations, supports and conditions?',
+    'Is each participant supported to understand their service agreement in accessible language?',
+    'Does each participant receive a signed copy or is any exception documented?',
+    'Do service agreements include emergency or disaster support arrangements?'
+  ]},
+  { division: 'Division 3 – Provision of Supports', area: 'Responsive Support Provision', outcome: 'Each participant accesses responsive, timely, competent and appropriate supports.', questions: [
+    'Are supports based on least intrusive options and evidence-informed practice?',
+    'Are links maintained with other providers with participant consent?',
+    'Are reasonable efforts made to involve participants in selecting workers?',
+    'Are workers trained in participant-specific needs where monitoring or daily support is required?'
+  ]},
+  { division: 'Division 3 – Provision of Supports', area: 'Transitions to or from the provider', outcome: 'Each participant experiences planned and coordinated transitions.', questions: [
+    'Are transitions planned, documented, communicated and managed with participants where possible?',
+    'Are transition risks identified, documented and responded to?',
+    'Are transition processes developed, applied, reviewed and communicated?'
+  ]},
+  { division: 'Division 4 – Support Provision Environment', area: 'Safe Environment', outcome: 'Each participant accesses supports in a safe environment appropriate to their needs.', questions: [
+    'Can each participant easily identify workers who provide supports?',
+    'Is work undertaken with participants to ensure safe support delivery environments?',
+    'Where relevant, is work undertaken with other providers to identify and manage risks?',
+    'Are infection prevention and control measures implemented where relevant?'
+  ]}
+];
+const createAuditResponses = () => INTERNAL_AUDIT_TEMPLATE.flatMap(section => section.questions.map((question, idx) => ({
+  id: makeId('auditq'), division: section.division, area: section.area, outcome: section.outcome, requirement: question, status: 'C', findings: '', evidence: '', actionRequired: '', priority: 'Medium', responsiblePerson: '', reviewDate: '', ncRaised: false, improvementItem: false, riskRaised: false
+})));
+
 const REGISTER_LABELS = {
   referenceNumber: 'Reference number',
   date: 'Date',
@@ -1557,6 +1704,118 @@ const withParticipantName = (record, clients = []) => {
   const c = clients.find(x => x.id === record.participantId);
   return { ...record, participantName: record.participantName || c?.name || '' };
 };
+
+function auditReportSummary(report = {}) {
+  const rows = Array.isArray(report.responses) ? report.responses : [];
+  return {
+    total: rows.length,
+    c: rows.filter(r => r.status === 'C').length,
+    nc: rows.filter(r => r.status === 'NC').length,
+    ofi: rows.filter(r => r.status === 'OFI').length,
+    na: rows.filter(r => r.status === 'NA').length,
+    actions: rows.filter(r => r.actionRequired || r.ncRaised || r.improvementItem || r.riskRaised).length,
+  };
+}
+function newAuditReport() {
+  const now = new Date();
+  return { id: makeId('auditReport'), auditNo: `IA-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`, auditDate: todayISO(), scope: 'NDIS Practice Standards internal audit', site: 'Head Office', auditTeam: '', auditees: '', status: 'Draft', responses: createAuditResponses(), createdAt: new Date().toISOString() };
+}
+function exportInternalAuditReportPdf({ business = {}, report = {} }) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 12; const right = pageWidth - margin; let y = 18;
+  const summary = auditReportSummary(report);
+  const ensure = (n=12) => { if (y + n > pageHeight - 20) { doc.addPage(); y = 18; header(); } };
+  const header = () => {
+    doc.setFillColor(7, 52, 139); doc.rect(0,0,pageWidth,28,'F');
+    doc.setTextColor(255,255,255); doc.setFont(undefined,'bold'); doc.setFontSize(15); doc.text('Kajola Care Internal Audit Report', margin, 12);
+    doc.setFont(undefined,'normal'); doc.setFontSize(8); doc.text(`${safeText(report.auditNo || 'Internal Audit')} · ${fmt(report.auditDate)} · ${safeText(report.site || 'Head Office')}`, margin, 19);
+    doc.setFont(undefined,'bold'); doc.text(safeText(business.name || 'Kajola Care'), right, 12, { align:'right' });
+    doc.setFont(undefined,'normal'); doc.text([business.abn ? `ABN ${business.abn}` : '', business.email || '', business.phone || ''].filter(Boolean).join(' · '), right, 19, { align:'right' });
+    y = 36;
+  };
+  header();
+  doc.setTextColor(15,23,42); doc.setFont(undefined,'bold'); doc.setFontSize(11); doc.text('Audit Overview', margin, y); y += 7;
+  doc.setFont(undefined,'normal'); doc.setFontSize(8.5);
+  [['Audit No', report.auditNo], ['Audit Date', fmt(report.auditDate)], ['Scope', report.scope], ['Site', report.site], ['Audit Team', report.auditTeam], ['Auditees', report.auditees], ['Status', report.status]].forEach(([k,v]) => { ensure(6); doc.setFont(undefined,'bold'); doc.text(`${k}:`, margin, y); doc.setFont(undefined,'normal'); doc.text(safeText(v || '-'), margin+30, y); y += 5; });
+  y += 4;
+  doc.setFillColor(248,250,252); doc.setDrawColor(214,226,242); doc.roundedRect(margin, y, pageWidth-margin*2, 18, 3,3,'FD');
+  doc.setFont(undefined,'bold'); doc.setFontSize(8); doc.setTextColor(7,52,139);
+  [['Total',summary.total], ['C',summary.c], ['NC',summary.nc], ['OFI',summary.ofi], ['NA',summary.na], ['Actions',summary.actions]].forEach(([k,v],i)=>{ const x=margin+8+i*30; doc.text(k, x, y+7); doc.setTextColor(15,23,42); doc.setFontSize(11); doc.text(String(v), x, y+14); doc.setFontSize(8); doc.setTextColor(7,52,139); });
+  y += 26;
+  let lastDivision = '', lastArea = '';
+  (report.responses || []).forEach((row, idx) => {
+    if (row.division !== lastDivision) { ensure(12); doc.setFillColor(214,235,205); doc.rect(margin, y, pageWidth-margin*2, 7, 'F'); doc.setFont(undefined,'bold'); doc.setFontSize(9); doc.setTextColor(15,23,42); doc.text(safeText(row.division), margin+2, y+5); y += 9; lastDivision = row.division; lastArea = ''; }
+    if (row.area !== lastArea) { ensure(14); doc.setFillColor(255,226,203); doc.rect(margin, y, pageWidth-margin*2, 7, 'F'); doc.setFont(undefined,'bold'); doc.setFontSize(8.5); doc.text(safeText(row.area), margin+2, y+5); y += 8; doc.setFont(undefined,'normal'); doc.setFontSize(7); doc.text(doc.splitTextToSize(safeText(row.outcome), pageWidth-margin*2-4), margin+2, y); y += Math.max(5, doc.splitTextToSize(safeText(row.outcome), pageWidth-margin*2-4).length*3.5); lastArea = row.area; }
+    ensure(22);
+    doc.setDrawColor(226,232,240); doc.line(margin, y, right, y); y += 4;
+    doc.setFont(undefined,'bold'); doc.setFontSize(7.5); doc.setTextColor(15,23,42); doc.text(`${idx+1}.`, margin, y);
+    doc.text(doc.splitTextToSize(safeText(row.requirement), 78), margin+6, y);
+    doc.setTextColor(row.status === 'NC' ? 185 : row.status === 'OFI' ? 180 : 22, row.status === 'NC' ? 28 : row.status === 'OFI' ? 83 : 101, row.status === 'NC' ? 28 : row.status === 'OFI' ? 9 : 52);
+    doc.text(safeText(row.status || 'C'), margin+88, y);
+    doc.setTextColor(51,65,85); doc.setFont(undefined,'normal');
+    const findingLines = doc.splitTextToSize(safeText(row.findings || '-'), 84).slice(0,5);
+    doc.text(findingLines, margin+100, y);
+    y += Math.max(9, findingLines.length*3.7 + 2);
+    if (row.evidence || row.actionRequired) { doc.setFontSize(7); doc.setTextColor(71,85,105); const extra = [row.evidence ? `Evidence: ${row.evidence}` : '', row.actionRequired ? `Action: ${row.actionRequired}` : ''].filter(Boolean).join(' | '); doc.text(doc.splitTextToSize(safeText(extra), pageWidth-margin*2-8), margin+6, y); y += Math.max(4, doc.splitTextToSize(safeText(extra), pageWidth-margin*2-8).length*3.4); }
+  });
+  const pages = doc.internal.getNumberOfPages();
+  for (let i=1;i<=pages;i++){ doc.setPage(i); doc.setDrawColor(226,232,240); doc.line(margin, pageHeight-13, right, pageHeight-13); doc.setFontSize(7); doc.setTextColor(100,116,139); doc.text('Status legends: C - Conformance, NC - Non-Conformance, OFI - Opportunity for Improvement, NA - Not Applicable', margin, pageHeight-8); doc.text(`Page ${i} of ${pages}`, right, pageHeight-8, {align:'right'}); }
+  doc.save(`${cleanFile(business.name)}-${cleanFile(report.auditNo || 'internal-audit-report')}.pdf`);
+}
+function exportInternalAuditSummaryPdf({ business = {}, auditReports = [] }) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' }); let y=18; const margin=14; const right=196;
+  doc.setFont(undefined,'bold'); doc.setFontSize(16); doc.text('Internal Audit Reports Register', margin, y); y+=8;
+  doc.setFont(undefined,'normal'); doc.setFontSize(9); doc.text(`${business.name || 'Kajola Care'} · Generated ${fmt(todayISO())}`, margin, y); y+=12;
+  if (!auditReports.length) doc.text('No internal audit reports found.', margin, y);
+  auditReports.forEach(r => { const sum=auditReportSummary(r); if (y>270){doc.addPage(); y=18;} doc.setFont(undefined,'bold'); doc.text(`${r.auditNo || 'Internal Audit'} — ${fmt(r.auditDate)}`, margin, y); doc.setFont(undefined,'normal'); doc.text(`Status ${r.status || '-'} · C ${sum.c} · NC ${sum.nc} · OFI ${sum.ofi} · NA ${sum.na}`, margin, y+5); y+=12; });
+  doc.save(`${cleanFile(business.name)}-internal-audit-reports.pdf`);
+}
+function InternalAuditReports({ business, auditReports = [], setAuditReports, setImprovements, setRisks, setDocuments }) {
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState(newAuditReport());
+  const [open, setOpen] = useState(false);
+  const activeReport = editingId ? draft : null;
+  const startNew = () => { setDraft(newAuditReport()); setEditingId(null); setOpen(true); window.scrollTo(0,0); };
+  const editReport = (r) => { setDraft({ ...newAuditReport(), ...r, responses: Array.isArray(r.responses) && r.responses.length ? r.responses : createAuditResponses() }); setEditingId(r.id); setOpen(true); window.scrollTo(0,0); };
+  const updateDraft = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
+  const updateResponse = (id, field, value) => setDraft(prev => ({ ...prev, responses: prev.responses.map(r => r.id === id ? { ...r, [field]: value } : r) }));
+  const saveReport = () => {
+    const enriched = { ...draft, id: draft.id || makeId('auditReport'), updatedAt: new Date().toISOString() };
+    setAuditReports(prev => editingId ? prev.map(r => r.id === editingId ? enriched : r) : [enriched, ...prev]);
+    setEditingId(enriched.id); setOpen(false);
+  };
+  const delReport = (id) => { if (confirm('Delete this internal audit report?')) setAuditReports(prev => prev.filter(r => r.id !== id)); };
+  const createLinkedItems = () => {
+    const actionRows = (draft.responses || []).filter(r => r.status === 'NC' || r.status === 'OFI' || r.actionRequired || r.improvementItem || r.riskRaised);
+    const now = new Date().toISOString();
+    const ciRows = actionRows.filter(r => r.status === 'NC' || r.status === 'OFI' || r.improvementItem || r.actionRequired).map((r, idx) => ({ id: makeId('improvements'), referenceNumber: nextRef('CIR', []), date: todayISO(), sourceOfFeedback: `Internal audit ${draft.auditNo}`, opportunityForImprovement: r.requirement, relevantStandardIndicator: `${r.division} / ${r.area}`, actionsRequired: r.actionRequired || r.findings || 'Review and action finding.', priority: r.priority || 'Medium', byWhen: r.reviewDate || addDaysISO(30), status: 'Open', outcome: '', review: r.findings || '', evidence: r.evidence || '', createdAt: now }));
+    const riskRows = actionRows.filter(r => r.riskRaised || r.status === 'NC').map((r, idx) => ({ id: makeId('risks'), number: idx + 1, taskActivityArea: r.area, issueHazardAspect: r.requirement, riskImpact: r.findings || r.actionRequired || 'Internal audit finding requiring risk review.', consequence: 'Moderate', likelihood: 'Possible', riskScore: 9, controlMeasures: r.actionRequired || '', personResponsible: r.responsiblePerson || '', residualConsequence: 'Minor', residualLikelihood: 'Unlikely', residualRiskScore: 4, status: 'Open', evidence: r.evidence || '', createdAt: now }));
+    if (ciRows.length) setImprovements(prev => [...ciRows.map((x,i)=>({ ...x, referenceNumber: nextRef('CIR', [...prev, ...ciRows.slice(0,i)]) })), ...prev]);
+    if (riskRows.length) setRisks(prev => [...riskRows.map((x,i)=>({ ...x, number: prev.length + i + 1 })), ...prev]);
+    setDocuments(prev => [{ id: makeId('documents'), title: `Internal Audit Report ${draft.auditNo}`, category: 'Internal Audit', owner: draft.auditTeam || 'Management', reviewDate: draft.auditDate, version: '1.0', location: 'Generated in Kajola Care', status: draft.status || 'Draft', notes: `${ciRows.length} CI items and ${riskRows.length} risk items linked.`, createdAt: now }, ...prev]);
+    alert(`Linked ${ciRows.length} improvement item(s), ${riskRows.length} risk item(s), and 1 evidence library record.`);
+  };
+  const reportsWithSummary = auditReports.map(r => ({ ...r, summary: auditReportSummary(r) }));
+  const grouped = (draft.responses || []).reduce((acc, row) => { const key = `${row.division}||${row.area}`; if (!acc[key]) acc[key] = { division: row.division, area: row.area, outcome: row.outcome, rows: [] }; acc[key].rows.push(row); return acc; }, {});
+  return <>
+    <Card title="Internal Audit Reports" action={<button className="primary" onClick={startNew}>+ Run Audit</button>}>
+      <p>Use the Form15-style audit engine inside Kajola Care. Each question captures status, findings, evidence, actions, responsibility and review date. NC/OFI findings can create continuous improvement, risk and evidence records automatically.</p>
+      <div className="report-summary-grid"><InsightCard label="Reports" value={auditReports.length} sub="Saved audits"/><InsightCard label="Open" value={auditReports.filter(r=>r.status !== 'Closed').length} sub="Draft or active"/><InsightCard label="NC" value={auditReports.reduce((s,r)=>s+auditReportSummary(r).nc,0)} sub="Non-conformances"/><InsightCard label="OFI" value={auditReports.reduce((s,r)=>s+auditReportSummary(r).ofi,0)} sub="Improvements"/></div>
+      <div className="report-actions"><button onClick={() => exportInternalAuditSummaryPdf({ business, auditReports })}>Export Register PDF</button></div>
+    </Card>
+    {open && <Card title={editingId ? `Edit ${draft.auditNo}` : 'Run Internal Audit'} action={<button onClick={() => setOpen(false)}>Close</button>}>
+      <div className="grid"><Field label="Audit No" value={draft.auditNo} onChange={e=>updateDraft('auditNo', e.target.value)}/><Field label="Audit Date" type="date" value={draft.auditDate} onChange={e=>updateDraft('auditDate', e.target.value)}/><Field label="Audit Scope" value={draft.scope} onChange={e=>updateDraft('scope', e.target.value)}/><Field label="Site Audited" value={draft.site} onChange={e=>updateDraft('site', e.target.value)}/><Field label="Audit Team" value={draft.auditTeam} onChange={e=>updateDraft('auditTeam', e.target.value)}/><Field label="Auditees" value={draft.auditees} onChange={e=>updateDraft('auditees', e.target.value)}/><label><span>Status</span><select value={draft.status || 'Draft'} onChange={e=>updateDraft('status', e.target.value)}><option>Draft</option><option>In Progress</option><option>Completed</option><option>Closed</option></select></label></div>
+      <div className="report-actions"><button className="primary" onClick={saveReport}>Save Audit Report</button><button onClick={() => exportInternalAuditReportPdf({ business, report: draft })}>Export PDF</button><button onClick={createLinkedItems}>Create Linked CI/Risk/Evidence</button></div>
+      <div className="audit-builder">
+        {Object.values(grouped).map(group => <section className="audit-section" key={`${group.division}-${group.area}`}><h4>{group.division}</h4><h5>{group.area}</h5><p>{group.outcome}</p>{group.rows.map(row => <div className="audit-question" key={row.id}><div><b>{row.requirement}</b></div><div className="audit-response-grid"><label><span>Status</span><select value={row.status || 'C'} onChange={e=>updateResponse(row.id,'status',e.target.value)}><option>C</option><option>NC</option><option>OFI</option><option>NA</option></select></label><Field label="Findings / Comments / Remarks" multiline value={row.findings || ''} onChange={e=>updateResponse(row.id,'findings',e.target.value)}/><Field label="Evidence Link" value={row.evidence || ''} onChange={e=>updateResponse(row.id,'evidence',e.target.value)}/><Field label="Actions Required" multiline value={row.actionRequired || ''} onChange={e=>updateResponse(row.id,'actionRequired',e.target.value)}/><label><span>Priority</span><select value={row.priority || 'Medium'} onChange={e=>updateResponse(row.id,'priority',e.target.value)}><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label><Field label="Responsible Person" value={row.responsiblePerson || ''} onChange={e=>updateResponse(row.id,'responsiblePerson',e.target.value)}/><Field label="Review Date" type="date" value={row.reviewDate || ''} onChange={e=>updateResponse(row.id,'reviewDate',e.target.value)}/><label className="checkline"><input type="checkbox" checked={!!row.improvementItem} onChange={e=>updateResponse(row.id,'improvementItem',e.target.checked)}/> Create CI item</label><label className="checkline"><input type="checkbox" checked={!!row.riskRaised} onChange={e=>updateResponse(row.id,'riskRaised',e.target.checked)}/> Create risk item</label></div></div>)}</section>)}
+      </div>
+    </Card>}
+    <Card title="Saved Internal Audit Reports" action={`${auditReports.length} saved`}><div className="client-table compliance-register"><div className="client-table-head"><span>Audit</span><span>Scope / Site</span><span>Results</span><span>Status</span><span>Actions</span></div><Records rows={reportsWithSummary} empty="No internal audit reports yet." render={r => <div className="client-table-row" key={r.id}><div><b>{r.auditNo}</b><small>{fmt(r.auditDate)}</small></div><div><b>{r.site || '-'}</b><small>{r.scope || 'No scope noted'}</small></div><div><b>C {r.summary.c} · NC {r.summary.nc} · OFI {r.summary.ofi} · NA {r.summary.na}</b><small>{r.summary.actions} action-linked item(s)</small></div><span className={`traffic-pill ${r.status === 'Closed' || r.status === 'Completed' ? 'current' : r.status === 'In Progress' ? 'due' : 'overdue'}`}>{r.status || 'Draft'}</span><div className="actions"><button onClick={()=>editReport(r)}>Edit</button><button onClick={()=>exportInternalAuditReportPdf({ business, report: r })}>PDF</button><button className="danger" onClick={()=>delReport(r.id)}>Delete</button></div></div>} /></div></Card>
+  </>;
+}
+
 function downloadCsv(filename, rows, cols) {
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const csv = [cols.map(c => esc(registerLabel(c))).join(','), ...rows.map(r => cols.map(c => esc(r[c])).join(','))].join('\n');
@@ -1575,7 +1834,7 @@ function exportRegisterPdf({ business = {}, title, rows = [], cols = [] }) {
 }
 function cleanFile(value) { return String(value || 'kajola-care').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase(); }
 
-function ReportsWorkspace({ business, transactions = [], clients = [], risks = [], incidents = [], complaints = [], improvements = [], audits = [], governanceReviews = [], documents = [], workers = [] }) {
+function ReportsWorkspace({ business, transactions = [], clients = [], risks = [], incidents = [], complaints = [], improvements = [], audits = [], auditReports = [], governanceReviews = [], documents = [], workers = [] }) {
   const [period, setPeriod] = useState('1m');
   const rows = getTransactionReportRows(transactions, period);
   const summary = transactionReportSummary(rows);
@@ -1604,7 +1863,7 @@ function ReportsWorkspace({ business, transactions = [], clients = [], risks = [
     <Card title="Audit & Compliance Evidence Pack" action="PDF/CSV">
       <p>Export live registers for audit evidence: risk, complaints, incidents, improvements, internal audits, governance reviews and document control.</p>
       <div className="report-summary-grid"><InsightCard label="Risks" value={risks.length} sub="Risk register"/><InsightCard label="Incidents" value={incidents.length} sub="Incident records"/><InsightCard label="Complaints" value={complaints.length} sub="Complaints log"/><InsightCard label="Improvements" value={improvements.length} sub="CAPA/CI actions"/></div>
-      <div className="report-actions"><ComplianceExportButton business={business} title="Risk Register" rows={risks.map(r => withParticipantName(r, clients))} cols={EXPORT_COLUMNS.risks}/><ComplianceExportButton business={business} title="Incident Register" rows={incidents.map(r => withParticipantName(r, clients))} cols={EXPORT_COLUMNS.incidents}/><ComplianceExportButton business={business} title="Complaints Register" rows={complaints.map(r => withParticipantName(r, clients))} cols={EXPORT_COLUMNS.complaints}/><ComplianceExportButton business={business} title="Continuous Improvement Register" rows={improvements} cols={EXPORT_COLUMNS.improvements}/><ComplianceExportButton business={business} title="Internal Audit Register" rows={audits} cols={EXPORT_COLUMNS.audits}/><ComplianceExportButton business={business} title="Governance Review Register" rows={governanceReviews} cols={EXPORT_COLUMNS.governanceReviews}/><ComplianceExportButton business={business} title="Evidence Library" rows={documents} cols={EXPORT_COLUMNS.documents}/></div>
+      <div className="report-actions"><ComplianceExportButton business={business} title="Risk Register" rows={risks.map(r => withParticipantName(r, clients))} cols={EXPORT_COLUMNS.risks}/><ComplianceExportButton business={business} title="Incident Register" rows={incidents.map(r => withParticipantName(r, clients))} cols={EXPORT_COLUMNS.incidents}/><ComplianceExportButton business={business} title="Complaints Register" rows={complaints.map(r => withParticipantName(r, clients))} cols={EXPORT_COLUMNS.complaints}/><ComplianceExportButton business={business} title="Continuous Improvement Register" rows={improvements} cols={EXPORT_COLUMNS.improvements}/><ComplianceExportButton business={business} title="Internal Audit Schedule" rows={audits} cols={EXPORT_COLUMNS.audits}/><button onClick={() => exportInternalAuditSummaryPdf({ business, auditReports })}>Internal Audit Reports PDF</button><ComplianceExportButton business={business} title="Governance Review Register" rows={governanceReviews} cols={EXPORT_COLUMNS.governanceReviews}/><ComplianceExportButton business={business} title="Evidence Library" rows={documents} cols={EXPORT_COLUMNS.documents}/></div>
     </Card>
   </>;
 }
@@ -1649,7 +1908,7 @@ function FinanceWorkspace({ business, clients, transactions, invoices = [], form
 }
 
 
-function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness, saveBusiness, workers = [], setWorkers = () => {}, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, initialSection = 'Employees', onSectionChange = () => {} }) {
+function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness, saveBusiness, workers = [], setWorkers = () => {}, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, auditReports = [], setAuditReports = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, initialSection = 'Employees', onSectionChange = () => {} }) {
   const [section, setSectionState] = useState(initialSection || 'Employees');
   useEffect(() => { if (initialSection && initialSection !== section) setSectionState(initialSection); }, [initialSection]);
   const setSection = (next) => { setSectionState(next); onSectionChange(next); };
@@ -1671,7 +1930,7 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
     overdue: items.filter(i => i.tone === 'overdue').length,
     missing: items.filter(i => i.tone === 'missing').length,
   };
-  const openActionCount = risks.filter(x=>x.status !== 'Closed').length + incidents.filter(x=>x.status !== 'Closed').length + complaints.filter(x=>x.status !== 'Closed').length + improvements.filter(x=>x.status !== 'Closed').length + audits.filter(x=>x.status !== 'Closed').length;
+  const openActionCount = risks.filter(x=>x.status !== 'Closed').length + incidents.filter(x=>x.status !== 'Closed').length + complaints.filter(x=>x.status !== 'Closed').length + improvements.filter(x=>x.status !== 'Closed').length + audits.filter(x=>x.status !== 'Closed').length + auditReports.filter(x=>x.status !== 'Closed').length;
   const updateBusinessCompliance = (id, field, value) => {
     const current = getBusinessComplianceItems(business);
     const nextItems = current.map(item => item.id === id ? { ...item, [field]: value } : item);
@@ -1723,6 +1982,7 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
     {section === 'Complaints' && <RecordRegister title="Complaints Register" type="complaints" rows={complaints} setRows={setComplaints} clients={clients} fields={['title','participantId','date','receivedBy','category','details','resolution','status','evidence']} business={business} />}
     {section === 'Improvements' && <RecordRegister title="Continuous Improvement Register" type="improvements" rows={improvements} setRows={setImprovements} clients={clients} fields={EXPORT_COLUMNS.improvements} business={business} />}
     {section === 'Audits' && <RecordRegister title="Internal Audit Schedule" type="audits" rows={audits} setRows={setAudits} clients={clients} fields={EXPORT_COLUMNS.audits} defaultRows={DEFAULT_INTERNAL_AUDIT_SCHEDULE} business={business} />}
+    {section === 'Audit Reports' && <InternalAuditReports business={business} auditReports={auditReports} setAuditReports={setAuditReports} setImprovements={setImprovements} setRisks={setRisks} setDocuments={setDocuments} />}
     {section === 'Governance' && <RecordRegister title="Governance Review Register" type="governanceReviews" rows={governanceReviews} setRows={setGovernanceReviews} clients={clients} fields={['title','date','attendees','summary','decisions','actions','nextReviewDate','status','evidence']} business={business} />}
     {section === 'Documents' && <RecordRegister title="Evidence Library & Document Control" type="documents" rows={documents} setRows={setDocuments} clients={clients} fields={['title','category','owner','reviewDate','version','location','status','notes']} business={business} />}
     {section === 'Items' && <Card title="Compliance Items" action={`${items.length} due`}><ComplianceItemsReport items={items} empty="No compliance items due." /></Card>}
