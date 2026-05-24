@@ -1462,7 +1462,7 @@ const EXPORT_COLUMNS = {
   incidents: ['title','participantName','date','severity','reportable','immediateAction','followUp','status','evidence'],
   complaints: ['title','participantName','date','receivedBy','category','details','resolution','status','evidence'],
   improvements: ['referenceNumber','date','sourceOfFeedback','opportunityForImprovement','relevantStandardIndicator','actionsRequired','priority','byWhen','status','outcome','review'],
-  audits: ['auditArea','dateReviewLastCompleted','dateNextDue'],
+  audits: ['auditArea','dateReviewLastCompleted','dateNextDue','status','evidence'],
   governanceReviews: ['title','date','attendees','summary','decisions','actions','nextReviewDate','status','evidence'],
   documents: ['title','category','owner','reviewDate','version','location','status','notes'],
 };
@@ -1536,19 +1536,23 @@ const riskScoreFrom = (consequence, likelihood) => {
   const l = { Rare: 1, Unlikely: 2, Possible: 3, Likely: 4, 'Almost Certain': 5 }[likelihood] || 0;
   return c && l ? c * l : '';
 };
-const recordDisplayTitle = (record = {}) => record.title || record.referenceNumber || record.auditArea || record.taskActivityArea || record.issueHazardAspect || record.category || 'Untitled';
-const emptyRecordFor = (type, rows = []) => ({ id: makeId(type), title: '', participantId: '', participantName: '', category: '', date: todayISO(), owner: '', status: 'Open', evidence: '', notes: '', createdAt: new Date().toISOString(),
-  likelihood: 'Possible', impact: 'Moderate', rating: 'Medium', treatment: '', reviewDate: addDaysISO(90),
-  number: (rows?.length || 0) + 1, taskActivityArea: '', issueHazardAspect: '', riskImpact: '', consequence: 'Moderate', riskScore: 9, controlMeasures: '', personResponsible: '', residualConsequence: 'Minor', residualLikelihood: 'Unlikely', residualRiskScore: 4,
-  severity: 'Low', reportable: 'No', immediateAction: '', followUp: '',
-  receivedBy: '', details: '', resolution: '',
-  referenceNumber: nextRef('CIR', rows), sourceOfFeedback: 'Audit', opportunityForImprovement: '', relevantStandardIndicator: '', actionsRequired: '', priority: 'Medium', byWhen: addDaysISO(14), outcome: '', review: '',
-  source: 'Audit', action: '', dueDate: addDaysISO(14),
-  auditArea: '', dateReviewLastCompleted: '', dateNextDue: '',
-  scope: 'NDIS Practice Standards', findings: '', actions: '',
-  attendees: '', summary: '', decisions: '', nextReviewDate: addDaysISO(90),
-  version: '1.0', location: '',
-});
+const recordDisplayTitle = (record = {}) => record.title || record.auditArea || record.referenceNumber || record.taskActivityArea || record.issueHazardAspect || record.category || 'Untitled';
+const emptyRecordFor = (type, rows = []) => {
+  const base = { id: makeId(type), title: '', participantId: '', participantName: '', category: '', date: todayISO(), owner: '', status: 'Open', evidence: '', notes: '', createdAt: new Date().toISOString(),
+    likelihood: 'Possible', impact: 'Moderate', rating: 'Medium', treatment: '', reviewDate: addDaysISO(90),
+    number: (rows?.length || 0) + 1, taskActivityArea: '', issueHazardAspect: '', riskImpact: '', consequence: 'Moderate', riskScore: 9, controlMeasures: '', personResponsible: '', residualConsequence: 'Minor', residualLikelihood: 'Unlikely', residualRiskScore: 4,
+    severity: 'Low', reportable: 'No', immediateAction: '', followUp: '',
+    receivedBy: '', details: '', resolution: '',
+    referenceNumber: type === 'improvements' ? nextRef('CIR', rows) : '', sourceOfFeedback: 'Audit', opportunityForImprovement: '', relevantStandardIndicator: '', actionsRequired: '', priority: 'Medium', byWhen: addDaysISO(14), outcome: '', review: '',
+    source: 'Audit', action: '', dueDate: addDaysISO(14),
+    auditArea: '', dateReviewLastCompleted: '', dateNextDue: '',
+    scope: 'NDIS Practice Standards', findings: '', actions: '',
+    attendees: '', summary: '', decisions: '', nextReviewDate: addDaysISO(90),
+    version: '1.0', location: '',
+  };
+  if (type === 'audits') return { ...base, title: '', referenceNumber: '', sourceOfFeedback: '', date: '', byWhen: '' };
+  return base;
+};
 const withParticipantName = (record, clients = []) => {
   const c = clients.find(x => x.id === record.participantId);
   return { ...record, participantName: record.participantName || c?.name || '' };
@@ -1726,10 +1730,23 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
 }
 
 function RecordRegister({ title, type, rows = [], setRows = () => {}, clients = [], fields = [], defaultRows = [], business = {} }) {
-  const effectiveRows = rows.length ? rows : defaultRows;
+  const normaliseAuditRow = (row = {}, idx = 0) => ({
+    ...row,
+    id: row.id || `aud-${String(idx + 1).padStart(3, '0')}`,
+    auditArea: row.auditArea || row.title || row.category || '',
+    title: '',
+    referenceNumber: '',
+    status: row.status || 'Open',
+    evidence: row.evidence || row.evidenceLink || '',
+  });
+  const baseRows = type === 'audits'
+    ? (rows.length ? rows : defaultRows).map(normaliseAuditRow).filter(row => row.auditArea)
+    : (rows.length ? rows : defaultRows);
+  const effectiveRows = baseRows;
   const [draft, setDraft] = useState(emptyRecordFor(type, effectiveRows));
   const [editingId, setEditingId] = useState(null);
   const [open, setOpen] = useState(false);
+  const activeFields = type === 'audits' ? ['auditArea','dateReviewLastCompleted','dateNextDue','status','evidence'] : fields;
   const setField = (field, value) => setDraft(prev => {
     const next = { ...prev, [field]: value };
     if (field === 'consequence' || field === 'likelihood') next.riskScore = riskScoreFrom(next.consequence, next.likelihood);
@@ -1738,24 +1755,28 @@ function RecordRegister({ title, type, rows = [], setRows = () => {}, clients = 
   });
   const save = () => {
     if (!String(recordDisplayTitle(draft) || '').trim() || recordDisplayTitle(draft) === 'Untitled') return alert('Please complete the main record field.');
-    const enriched = withParticipantName({ ...draft, updatedAt: new Date().toISOString() }, clients);
-    if (editingId) setRows(prev => (prev.length ? prev : effectiveRows).map(r => r.id === editingId ? { ...enriched, id: editingId } : r));
+    const cleaned = type === 'audits' ? { ...draft, title: '', referenceNumber: '', sourceOfFeedback: '' } : draft;
+    const enriched = withParticipantName({ ...cleaned, updatedAt: new Date().toISOString() }, clients);
+    if (editingId) setRows(prev => {
+      const source = prev.length ? prev : effectiveRows;
+      return source.map((r, idx) => r.id === editingId ? { ...normaliseAuditRow(r, idx), ...enriched, id: editingId } : r);
+    });
     else setRows(prev => [{ ...enriched, id: enriched.id || makeId(type), createdAt: new Date().toISOString() }, ...prev]);
     setDraft(emptyRecordFor(type, effectiveRows)); setEditingId(null); setOpen(false);
   };
-  const edit = (row) => { setDraft({ ...emptyRecordFor(type, effectiveRows), ...row }); setEditingId(row.id); setOpen(true); window.scrollTo(0, 0); };
+  const edit = (row) => { setDraft({ ...emptyRecordFor(type, effectiveRows), ...(type === 'audits' ? normaliseAuditRow(row) : row) }); setEditingId(row.id); setOpen(true); window.scrollTo(0, 0); };
   const del = (id) => { if (confirm('Delete this record?')) setRows(prev => prev.filter(r => r.id !== id)); };
   const statusCounts = effectiveRows.reduce((acc, row) => { const key = row.status || 'Open'; acc[key] = (acc[key] || 0) + 1; return acc; }, {});
-  const cols = EXPORT_COLUMNS[type] || fields;
+  const cols = EXPORT_COLUMNS[type] || activeFields;
   return <>
     <Card title={title} action={<button type="button" className="text-link" onClick={() => setOpen(v => !v)}>{open ? 'Collapse' : '+ Add Record'}</button>}>
       <div className="report-summary-grid"><InsightCard label="Total" value={effectiveRows.length} sub="Records"/><InsightCard label="Open" value={statusCounts.Open || 0} sub="Needs action"/><InsightCard label="In Progress" value={statusCounts['In Progress'] || 0} sub="Being handled"/><InsightCard label="Closed" value={statusCounts.Closed || 0} sub="Completed"/></div>
       <div className="report-actions"><button onClick={() => exportRegisterPdf({ business, title, rows: effectiveRows.map(r => withParticipantName(r, clients)), cols })}>Export PDF</button><button onClick={() => downloadCsv(`${cleanFile(title)}.csv`, effectiveRows.map(r => withParticipantName(r, clients)), cols)}>Export CSV</button></div>
       {!open && <p className="muted">Use this register during normal operations so the audit trail is ready without extra paperwork.</p>}
-      {open && <div className="grid">{fields.map(field => <RegisterField key={field} field={field} value={draft[field] || ''} onChange={value => setField(field, value)} clients={clients} />)}</div>}
+      {open && <div className="grid">{activeFields.map(field => <RegisterField key={field} field={field} value={draft[field] || ''} onChange={value => setField(field, value)} clients={clients} />)}</div>}
       {open && <><button className="primary" onClick={save}>{editingId ? 'Update Record' : 'Save Record'}</button>{editingId && <button onClick={() => { setDraft(emptyRecordFor(type, effectiveRows)); setEditingId(null); setOpen(false); }}>Cancel Edit</button>}</>}
     </Card>
-    <Card title={`${title} Records`} action={`${effectiveRows.length} saved`}><div className="client-table compliance-register"><div className="client-table-head"><span>Record</span><span>Owner / Area</span><span>Date / Review</span><span>Status</span><span>Actions</span></div><Records rows={effectiveRows} empty="No records yet." render={row => <div className="client-table-row" key={row.id}><div><b>{recordDisplayTitle(row)}</b><small>{row.category || row.sourceOfFeedback || row.auditArea || row.issueHazardAspect || row.version || 'General'}</small></div><div><b>{withParticipantName(row, clients).participantName || row.owner || row.personResponsible || row.receivedBy || '-'}</b><small>{row.evidence || row.controlMeasures || row.location || row.notes || 'No evidence link noted'}</small></div><div><b>{fmt(row.date || row.dateReviewLastCompleted || row.reviewDate || row.byWhen || row.dateNextDue || row.dueDate || row.nextReviewDate)}</b><small>{row.dateNextDue ? `Next due ${fmt(row.dateNextDue)}` : row.reviewDate ? `Review ${fmt(row.reviewDate)}` : row.byWhen ? `Due ${fmt(row.byWhen)}` : row.dueDate ? `Due ${fmt(row.dueDate)}` : ''}</small></div><span className={`traffic-pill ${row.status === 'Closed' || row.status === 'Completed' ? 'current' : row.status === 'In Progress' || row.status === 'Pending Review' ? 'due' : 'overdue'}`}>{row.status || 'Open'}</span><div className="actions"><button onClick={() => edit(row)}>Edit</button><button className="danger" onClick={() => del(row.id)}>Delete</button></div></div>} /></div></Card>
+    <Card title={`${title} Records`} action={`${effectiveRows.length} saved`}><div className="client-table compliance-register"><div className="client-table-head"><span>Record</span><span>Evidence / Area</span><span>Date / Review</span><span>Status</span><span>Actions</span></div><Records rows={effectiveRows} empty="No records yet." render={row => <div className="client-table-row" key={row.id}><div><b>{recordDisplayTitle(row)}</b><small>{type === 'audits' ? 'Internal audit schedule' : (row.category || row.sourceOfFeedback || row.auditArea || row.issueHazardAspect || row.version || 'General')}</small></div><div><b>{withParticipantName(row, clients).participantName || row.owner || row.personResponsible || row.receivedBy || '-'}</b><small>{row.evidence || row.controlMeasures || row.location || row.notes || 'No evidence link noted'}</small></div><div><b>{fmt(row.dateReviewLastCompleted || row.date || row.reviewDate || row.byWhen || row.dateNextDue || row.dueDate || row.nextReviewDate)}</b><small>{row.dateNextDue ? `Next due ${fmt(row.dateNextDue)}` : row.reviewDate ? `Review ${fmt(row.reviewDate)}` : row.byWhen ? `Due ${fmt(row.byWhen)}` : row.dueDate ? `Due ${fmt(row.dueDate)}` : ''}</small></div><span className={`traffic-pill ${row.status === 'Closed' || row.status === 'Completed' ? 'current' : row.status === 'In Progress' || row.status === 'Pending Review' ? 'due' : 'overdue'}`}>{row.status || 'Open'}</span><div className="actions"><button onClick={() => edit(row)}>Edit</button><button className="danger" onClick={() => del(row.id)}>Delete</button></div></div>} /></div></Card>
   </>;
 }
 
