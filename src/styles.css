@@ -1101,3 +1101,9 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
   .schedule-register .actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
   .schedule-register .actions button { width: 100%; }
 }
+.weekday-picker { grid-column: 1 / -1; display: grid; gap: 0.45rem; }
+.weekday-picker > span { font-size: 0.78rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.weekday-picker > div { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.weekday-picker button { border: 1px solid var(--border); border-radius: 999px; padding: 0.5rem 0.75rem; background: var(--card); color: var(--text); font-weight: 800; cursor: pointer; }
+.weekday-picker button.active { background: var(--primary); border-color: var(--primary); color: white; }
+.weekday-picker small { color: var(--muted); }

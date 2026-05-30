@@ -575,6 +575,41 @@ export default function App() {
   const pricingItems = useMemo(() => getActivePricingItems(business), [business]);
   const showNotice = (message) => { setNotice(message); setTimeout(() => setNotice(''), 4200); };
 
+
+  const publishScheduleChanges = async ({ nextShifts, nextInvoices = invoices, message = 'Schedule changes published to employee portal.' } = {}) => {
+    const cleanShifts = normaliseShifts(nextShifts || shifts);
+    const cleanInvoices = Array.isArray(nextInvoices) ? nextInvoices : invoices;
+    if (!user?.id || !supabase) {
+      showNotice('Schedule saved locally. Supabase is not configured for employee portal publishing.');
+      return { ok: false, message: 'Supabase is not configured.' };
+    }
+    try {
+      const cloud = await loadSnapshot(user);
+      const base = cloud.ok && cloud.payload ? normalisePayload(cloud.payload) : currentPayload();
+      const nextPayload = normalisePayload({
+        ...base,
+        business,
+        clients,
+        workers,
+        shifts: cleanShifts,
+        invoices: cleanInvoices,
+        _meta: { sectionsUpdatedAt: { ...(base._meta?.sectionsUpdatedAt || {}), shifts: new Date().toISOString(), invoices: new Date().toISOString(), workers: new Date().toISOString(), clients: new Date().toISOString() } }
+      });
+      const r = await syncSnapshot(nextPayload, user);
+      if (r.ok) {
+        lastCloudSnapshotRef.current = serialisePayload(nextPayload);
+        showNotice(message);
+      } else {
+        showNotice(`Schedule saved locally, but cloud publish failed: ${r.message}`);
+      }
+      return r;
+    } catch (error) {
+      const msg = error?.message || 'Unknown error';
+      showNotice(`Schedule saved locally, but cloud publish failed: ${msg}`);
+      return { ok: false, message: msg };
+    }
+  };
+
   const saveClient = () => {
     if (!clientForm.name.trim()) return alert('Please enter the client name.');
     if (editingClient) setClients(prev => prev.map(c => c.id === editingClient ? { ...c, ...clientForm, updatedAt: new Date().toISOString() } : c));
@@ -918,7 +953,7 @@ export default function App() {
       {active === 'Finance' && <FinanceWorkspace business={business} clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} updateStatus={updateTxnStatus} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} risks={risks} setRisks={setRisks} incidents={incidents} setIncidents={setIncidents} complaints={complaints} setComplaints={setComplaints} improvements={improvements} setImprovements={setImprovements} audits={audits} setAudits={setAudits} auditReports={auditReports} setAuditReports={setAuditReports} governanceReviews={governanceReviews} setGovernanceReviews={setGovernanceReviews} documents={documents} setDocuments={setDocuments} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
       {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} risks={risks} incidents={incidents} complaints={complaints} improvements={improvements} audits={audits} auditReports={auditReports} governanceReviews={governanceReviews} documents={documents} workers={workers} />}
-      {active === 'Schedules' && <SchedulesWorkspace clients={clients} workers={workers} shifts={shifts} setShifts={setShifts} invoices={invoices} setInvoices={setInvoices} pricingItems={pricingItems} />}
+      {active === 'Schedules' && <SchedulesWorkspace clients={clients} workers={workers} shifts={shifts} setShifts={setShifts} invoices={invoices} setInvoices={setInvoices} pricingItems={pricingItems} onPublishSchedule={publishScheduleChanges} />}
       {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setShifts([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setAuditReports([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
     </main>
   </div>
@@ -995,6 +1030,7 @@ export default function App() {
     cancelTxn={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}
     setBusiness={setBusiness}
     saveBusiness={saveBusiness}
+    onPublishSchedule={publishScheduleChanges}
     settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setShifts([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setAuditReports([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>}
   />
 </>;
@@ -1008,7 +1044,7 @@ function BrandMark({ compact = false }) {
   return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/icons/kajola-care-logo.png" alt="Kajola Care" /></div>;
 }
 
-function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, setInvoices = () => {}, shifts = [], setShifts = () => {}, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, auditReports = [], setAuditReports = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, setInvoices = () => {}, shifts = [], setShifts = () => {}, onPublishSchedule = async () => {}, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, auditReports = [], setAuditReports = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const activeClients = clients.filter(c => c && !c.archived);
@@ -1031,7 +1067,7 @@ function MobileShell({ active, setActive, complianceSection, setComplianceSectio
       {active === 'Finance' && <MobileFinance business={business} clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} risks={risks} setRisks={setRisks} incidents={incidents} setIncidents={setIncidents} complaints={complaints} setComplaints={setComplaints} improvements={improvements} setImprovements={setImprovements} audits={audits} setAudits={setAudits} auditReports={auditReports} setAuditReports={setAuditReports} governanceReviews={governanceReviews} setGovernanceReviews={setGovernanceReviews} documents={documents} setDocuments={setDocuments} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
       {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} risks={risks} incidents={incidents} complaints={complaints} improvements={improvements} audits={audits} auditReports={auditReports} governanceReviews={governanceReviews} documents={documents} workers={workers} />}
-      {active === 'Schedules' && <SchedulesWorkspace clients={clients} workers={workers} shifts={shifts} setShifts={setShifts} invoices={invoices} setInvoices={setInvoices} pricingItems={pricingItems} />}
+      {active === 'Schedules' && <SchedulesWorkspace clients={clients} workers={workers} shifts={shifts} setShifts={setShifts} invoices={invoices} setInvoices={setInvoices} pricingItems={pricingItems} onPublishSchedule={onPublishSchedule} />}
       {active === 'Settings' && <div className="mobile-settings"><MobileMore setActive={setActive} />{settings}</div>}
     </main>
     <button className="mobile-fab" onClick={() => setFabOpen(v => !v)}>+</button>
@@ -2395,14 +2431,14 @@ function NdisPricingManager({ items, onChange, onSave }) {
 }
 
 
-function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts = () => {}, invoices = [], setInvoices = () => {}, pricingItems = DEFAULT_PRICING_ITEMS }) {
+function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts = () => {}, invoices = [], setInvoices = () => {}, pricingItems = DEFAULT_PRICING_ITEMS, onPublishSchedule = async () => {} }) {
   const safeClients = Array.isArray(clients) ? clients.filter(c => c && typeof c === 'object') : [];
   const safeWorkers = Array.isArray(workers) ? workers.filter(w => w && typeof w === 'object') : [];
   const safeInvoices = Array.isArray(invoices) ? invoices.filter(i => i && typeof i === 'object') : [];
   const safePricingItems = Array.isArray(pricingItems) && pricingItems.length ? pricingItems : DEFAULT_PRICING_ITEMS;
   const [draft, setDraft] = useState(emptyShift());
   const [editingId, setEditingId] = useState(null);
-  const [recurring, setRecurring] = useState({ enabled: false, frequency: 'weekly', occurrences: 4 });
+  const [recurring, setRecurring] = useState({ enabled: false, frequency: 'weekly', occurrences: 4, weekdays: [] });
   const [view, setView] = useState('Calendar');
   const [filterWorker, setFilterWorker] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -2422,6 +2458,36 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
   };
   const recurringStepDays = recurring.frequency === 'daily' ? 1 : recurring.frequency === 'fortnightly' ? 14 : 7;
   const recurringCount = Math.min(52, Math.max(1, Number(recurring.occurrences) || 1));
+  const weekdayOptions = [
+    { value: 1, short: 'Mon', label: 'Monday' },
+    { value: 2, short: 'Tue', label: 'Tuesday' },
+    { value: 3, short: 'Wed', label: 'Wednesday' },
+    { value: 4, short: 'Thu', label: 'Thursday' },
+    { value: 5, short: 'Fri', label: 'Friday' },
+    { value: 6, short: 'Sat', label: 'Saturday' },
+    { value: 0, short: 'Sun', label: 'Sunday' },
+  ];
+  const selectedWeekdays = (Array.isArray(recurring.weekdays) && recurring.weekdays.length ? recurring.weekdays : [new Date(`${draft.date || todayISO()}T00:00:00`).getDay()]).map(Number);
+  const toggleWeekday = (day) => setRecurring(prev => {
+    const existing = Array.isArray(prev.weekdays) ? prev.weekdays.map(Number) : [];
+    const next = existing.includes(day) ? existing.filter(x => x !== day) : [...existing, day];
+    return { ...prev, weekdays: next.sort((a, b) => ((a || 7) - (b || 7))) };
+  });
+  const buildRecurringDates = () => {
+    if (!recurring.enabled) return [draft.date || todayISO()];
+    if (recurring.frequency !== 'weekly') return Array.from({ length: recurringCount }, (_, idx) => addDaysToISO(draft.date, idx * recurringStepDays));
+    const dates = [];
+    const start = draft.date || todayISO();
+    let cursor = new Date(`${start}T00:00:00`);
+    let guard = 0;
+    const wanted = new Set(selectedWeekdays);
+    while (dates.length < recurringCount && guard < 370) {
+      if (wanted.has(cursor.getDay())) dates.push(cursor.toISOString().slice(0, 10));
+      cursor.setDate(cursor.getDate() + 1);
+      guard += 1;
+    }
+    return dates.length ? dates : [start];
+  };
   const nowKey = new Date().toISOString().slice(0, 16);
   const weekStart = new Date();
   weekStart.setHours(0, 0, 0, 0);
@@ -2460,29 +2526,35 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
       status: draft.status || 'Scheduled'
     };
     if (editingId) {
-      setShifts(prev => prev.map(shift => shift.id === editingId ? { ...baseShift, id: editingId } : shift));
+      const nextShifts = safeShifts.map(shift => shift.id === editingId ? { ...baseShift, id: editingId } : shift);
+      setShifts(nextShifts);
+      onPublishSchedule({ nextShifts, message: 'Shift updated and published to employee portal.' });
     } else {
-      const seriesId = recurring.enabled && recurringCount > 1 ? makeId('series') : '';
-      const newShifts = Array.from({ length: recurring.enabled ? recurringCount : 1 }, (_, idx) => ({
+      const recurringDates = recurring.enabled ? buildRecurringDates() : [baseShift.date];
+      const seriesId = recurring.enabled && recurringDates.length > 1 ? makeId('series') : '';
+      const recurrenceDayLabel = recurring.frequency === 'weekly' ? selectedWeekdays.map(day => weekdayOptions.find(x => x.value === day)?.short).filter(Boolean).join(', ') : recurring.frequency;
+      const newShifts = recurringDates.map((date, idx) => ({
         ...baseShift,
         id: idx === 0 ? (baseShift.id || makeId('shift')) : makeId('shift'),
-        date: addDaysToISO(baseShift.date, idx * recurringStepDays),
+        date,
         createdAt: new Date().toISOString(),
         reviewStatus: 'Not reviewed',
         payrollStatus: 'Not generated',
         invoiceStatus: 'Not generated',
         recurrenceSeriesId: seriesId,
-        recurrenceLabel: seriesId ? `${recurring.frequency} · ${recurringCount} shifts` : ''
+        recurrenceLabel: seriesId ? `${recurrenceDayLabel} · ${recurringDates.length} shifts` : ''
       }));
-      setShifts(prev => [...newShifts, ...prev]);
+      const nextShifts = [...newShifts, ...safeShifts];
+      setShifts(nextShifts);
+      onPublishSchedule({ nextShifts, message: `${newShifts.length} shift${newShifts.length === 1 ? '' : 's'} published to employee portal.` });
     }
     setDraft(emptyShift());
     setEditingId(null);
   };
   const editShift = (shift) => { setDraft({ ...emptyShift(), ...shift }); setEditingId(shift.id); window.scrollTo(0, 0); };
   const duplicateShift = (shift) => { setDraft({ ...emptyShift(), ...shift, id: makeId('shift'), status: 'Scheduled', startedAt: '', endedAt: '', notes: '', date: shift.date || todayISO(), reviewStatus: 'Not reviewed', payrollStatus: 'Not generated', invoiceStatus: 'Not generated' }); setEditingId(null); window.scrollTo(0, 0); };
-  const deleteShift = (id) => { if (confirm('Delete this assigned shift?')) setShifts(prev => prev.filter(shift => shift.id !== id)); };
-  const updateShift = (id, patch) => setShifts(prev => prev.map(shift => shift.id === id ? { ...shift, ...patch, updatedAt: new Date().toISOString() } : shift));
+  const deleteShift = (id) => { if (confirm('Delete this assigned shift?')) { const nextShifts = safeShifts.filter(shift => shift.id !== id); setShifts(nextShifts); onPublishSchedule({ nextShifts, message: 'Shift deleted and employee portal updated.' }); } };
+  const updateShift = (id, patch, nextInvoices = safeInvoices) => { const nextShifts = safeShifts.map(shift => shift.id === id ? { ...shift, ...patch, updatedAt: new Date().toISOString() } : shift); setShifts(nextShifts); onPublishSchedule({ nextShifts, nextInvoices, message: 'Shift status updated and published.' }); };
   const reviewShift = (shift) => updateShift(shift.id, { reviewStatus: 'Reviewed', reviewedAt: new Date().toISOString() });
   const generateTimesheet = (shift) => updateShift(shift.id, { payrollStatus: 'Timesheet generated', timesheetGeneratedAt: new Date().toISOString() });
   const markInvoiceReady = (shift) => {
@@ -2514,8 +2586,9 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    setInvoices(prev => [invoice, ...prev]);
-    updateShift(shift.id, { invoiceStatus: 'Invoice generated', invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, invoiceReadyAt: new Date().toISOString() });
+    const nextInvoices = [invoice, ...safeInvoices];
+    setInvoices(nextInvoices);
+    updateShift(shift.id, { invoiceStatus: 'Invoice generated', invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, invoiceReadyAt: new Date().toISOString() }, nextInvoices);
   };
   const filteredShifts = [...safeShifts]
     .filter(shift => filterWorker === 'all' || shift.workerId === filterWorker)
@@ -2576,10 +2649,11 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
         {recurring.enabled && <div className="recurring-grid">
           <label><span>Repeat</span><select value={recurring.frequency} onChange={e => setRecurring(prev => ({ ...prev, frequency: e.target.value }))}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option></select></label>
           <label><span>Number of shifts</span><input type="number" min="1" max="52" value={recurring.occurrences} onChange={e => setRecurring(prev => ({ ...prev, occurrences: e.target.value }))} /></label>
-          <div className="recurring-preview"><small>Preview</small><b>{recurringCount} shift{recurringCount === 1 ? '' : 's'} from {fmt(draft.date)}</b><span>{recurring.frequency} recurrence · same worker, client, time, address and service type.</span></div>
+          {recurring.frequency === 'weekly' && <div className="weekday-picker"><span>Repeat on</span><div>{weekdayOptions.map(day => <button type="button" key={day.value} className={selectedWeekdays.includes(day.value) ? 'active' : ''} onClick={() => toggleWeekday(day.value)} aria-label={day.label}>{day.short}</button>)}</div><small>Select one or more days. The app will create the next {recurringCount} matching shift{recurringCount === 1 ? '' : 's'} from the start date.</small></div>}
+          <div className="recurring-preview"><small>Preview</small><b>{buildRecurringDates().length} shift{buildRecurringDates().length === 1 ? '' : 's'} from {fmt(buildRecurringDates()[0])}</b><span>{recurring.frequency === 'weekly' ? `Weekly on ${selectedWeekdays.map(day => weekdayOptions.find(x => x.value === day)?.short).filter(Boolean).join(', ')}` : recurring.frequency} · same worker, client, time, address and service type.</span></div>
         </div>}
       </div>}
-      <div className="actions"><button className="primary" onClick={saveShift}>{editingId ? 'Update Shift' : recurring.enabled ? `Create ${recurringCount} Recurring Shifts` : 'Assign Employee to Shift'}</button>{editingId && <button onClick={() => { setEditingId(null); setDraft(emptyShift()); }}>Cancel Edit</button>}</div>
+      <div className="actions"><button className="primary" onClick={saveShift}>{editingId ? 'Update Shift' : recurring.enabled ? `Create ${buildRecurringDates().length} Recurring Shifts` : 'Assign Employee to Shift'}</button>{editingId && <button onClick={() => { setEditingId(null); setDraft(emptyShift()); }}>Cancel Edit</button>}</div>
     </Card>
 
     {view === 'Calendar' && <Card title="This Week Coverage"><div className="schedule-week-board">{weekDays.map(day => {
