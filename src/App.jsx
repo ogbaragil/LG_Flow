@@ -471,16 +471,38 @@ export default function App() {
 
   useEffect(() => {
     if (authLoading || !user?.id || employeeSession?.workerId) return;
-    setStorageLoaded(false);
-    try {
-      const raw = localStorage.getItem(storageKeyFor(user));
-      if (raw) applyPayload(JSON.parse(raw));
-      else applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], shifts: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], auditReports: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } });
-    } catch {
-      applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], shifts: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], auditReports: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } });
-    } finally {
-      setStorageLoaded(true);
+    let cancelled = false;
+    async function loadAdminWorkspaceOnSignIn() {
+      setStorageLoaded(false);
+      setCloudChecked(false);
+      setCloudLoading(true);
+      const emptyWorkspace = { business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], shifts: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], auditReports: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } };
+      try {
+        let loaded = null;
+        if (supabase) {
+          const cloud = await loadSnapshot(user);
+          if (cloud.ok && cloud.payload) loaded = normalisePayload(cloud.payload);
+        }
+        if (!loaded) {
+          const raw = localStorage.getItem(storageKeyFor(user));
+          loaded = raw ? normalisePayload(JSON.parse(raw)) : normalisePayload(emptyWorkspace);
+        }
+        if (cancelled) return;
+        lastCloudSnapshotRef.current = loaded ? serialisePayload(loaded) : '';
+        lastLocalSnapshotRef.current = '';
+        applyPayload(loaded || emptyWorkspace);
+      } catch {
+        if (!cancelled) applyPayload(emptyWorkspace);
+      } finally {
+        if (!cancelled) {
+          setStorageLoaded(true);
+          setCloudChecked(true);
+          setCloudLoading(false);
+        }
+      }
     }
+    loadAdminWorkspaceOnSignIn();
+    return () => { cancelled = true; };
   }, [authLoading, user?.id]);
 
   useEffect(() => {
@@ -492,25 +514,8 @@ export default function App() {
     localStorage.setItem(employeeSession?.ownerStorageKey || storageKeyFor(user), snapshot);
   }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers, shifts, risks, incidents, complaints, improvements, audits, auditReports, governanceReviews, documents]);
 
-  // Admin changes are saved locally immediately and synced to Supabase automatically.
-  // This is what lets employee phones load their own shifts without the admin device being present.
-  useEffect(() => {
-    if (!storageLoaded || !user?.id) return;
-    setCloudChecked(true);
-    if (cloudLoading) return;
-    const data = payloadWithFreshMeta();
-    const snapshot = serialisePayload(data);
-    if (snapshot === lastCloudSnapshotRef.current) return;
-    clearTimeout(autoSyncTimer.current);
-    autoSyncTimer.current = setTimeout(async () => {
-      const latest = payloadWithFreshMeta();
-      const latestSnapshot = serialisePayload(latest);
-      if (latestSnapshot === lastCloudSnapshotRef.current) return;
-      const r = await syncSnapshot(latest, user);
-      if (r.ok) lastCloudSnapshotRef.current = latestSnapshot;
-    }, 900);
-    return () => clearTimeout(autoSyncTimer.current);
-  }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers, shifts, risks, incidents, complaints, improvements, audits, auditReports, governanceReviews, documents]);
+  // Admin workspace loads from Supabase on sign-in, but admin edits do not auto-backup.
+  // Use Settings > Sync to Supabase when the admin intentionally wants to publish workspace changes.
 
   const loadCloudData = async ({ silent = false } = {}) => {
     if (!user?.id) return { ok: false, message: 'Please sign in first.' };
@@ -522,7 +527,7 @@ export default function App() {
         lastCloudSnapshotRef.current = serialisePayload(nextPayload);
         lastLocalSnapshotRef.current = '';
         applyPayload(nextPayload);
-        if (!silent) showNotice('Cloud data loaded into this device. Changes now sync automatically to Supabase.');
+        if (!silent) showNotice('Cloud data loaded into this device. Admin changes remain local until you manually sync to Supabase.');
       } else if (!silent) {
         showNotice(r.message || 'No cloud data found yet.');
       }
@@ -878,7 +883,7 @@ export default function App() {
     <aside className="sidebar">
       <div className="brand"><BrandMark /><div><BrandWordmark /><p>Care • Connect • Empower</p></div></div>
       <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
-      <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'Auto cloud sync ready' : 'Cloud sync disabled'}</small></div>
+      <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'Auto-load on sign-in • manual admin sync' : 'Cloud sync disabled'}</small></div>
       <div className="profile-card"><div className="avatar">{(user.email || 'KC').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
     <main className="main">
