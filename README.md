@@ -1,37 +1,11 @@
-# Kajola Care PWA
+# Kajola Care v16.1 Employee Username Portal
 
-Premium NDIS operations PWA for clients, invoices, transactions, PDF export, offline storage and Supabase Auth cloud sync.
+Updates in this package:
+- Admin sign-in remains email/password through Supabase Auth.
+- Employee sign-in now uses a separate username/password created by admin.
+- Employees cannot use their employee username/password to access the admin portal.
+- Admin can create, generate, reset and disable employee portal credentials in Compliance > Employees.
+- Employee portal opens only assigned shifts, clock in/out and shift notes.
+- Smart Scheduling remains available for assigning employees to participant shifts.
 
-## Deploy
-
-Cloudflare Pages settings:
-
-- Framework preset: None
-- Build command: `npm install && npm run build`
-- Build output directory: `dist`
-- Root directory: `/`
-
-Environment variables:
-
-- `NODE_VERSION=20`
-- `VITE_SUPABASE_URL=https://your-project.supabase.co`
-- `VITE_SUPABASE_ANON_KEY=your-anon-public-key`
-
-You can also set runtime config in `public/supabase-config.js` or in the in-app Supabase setup screen.
-
-## Supabase
-
-Run `supabase/schema.sql` in your Kajola Care Supabase project.
-
-## New in this build
-
-- Personalised greeting from Supabase user metadata or email.
-- User-specific onboarding for business profile.
-- Business name, ABN, email, phone, address and payment details are stored in the user's private cloud snapshot.
-- Exported invoices use the signed-in user's business information.
-- Settings includes editable business profile.
-
-
-## NDIS Pricing Manager
-
-Settings includes an editable NDIS Pricing Manager. The support item number, item name, unit and rate are saved in each user's business profile/cloud snapshot and are used by invoice generation for future invoices.
+Note: In this client-only package, employee username credentials are stored inside the app snapshot available on the device/browser. For production multi-device employee login, move credential validation to a secure Supabase Edge Function or server endpoint.

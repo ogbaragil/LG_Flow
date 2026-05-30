@@ -208,7 +208,7 @@ const emptyClient = { name: '', ndisNumber: '', email: '', phone: '', address: '
 const emptyLine = () => { const item = DEFAULT_PRICING_ITEMS[0]; return { id: makeId('line'), itemCode: item.itemNumber, itemLabel: item.label, serviceDate: todayISO(), unitType: item.unitType, quantity: '1', rate: String(item.rate), notes: '' }; };
 const emptyInvoice = () => ({ clientId: '', dueDate: addDaysISO(7), notes: '', lines: [emptyLine()] });
 const emptyTxn = { clientId: '', type: 'expense', status: 'pending', category: '', description: '', amount: '', date: todayISO() };
-const emptyWorker = () => Object.fromEntries([['id', makeId('worker')], ['name', ''], ['role', ''], ['email', ''], ['phone', ''], ['loginEnabled', true], ['notes', ''], ...DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => [item.key, ''])]);
+const emptyWorker = () => Object.fromEntries([['id', makeId('worker')], ['name', ''], ['role', ''], ['email', ''], ['phone', ''], ['employeeUsername', ''], ['employeePasswordHash', ''], ['temporaryPassword', ''], ['mustChangePassword', false], ['loginEnabled', true], ['lastPasswordResetAt', ''], ['notes', ''], ...DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => [item.key, ''])]);
 const emptyShift = () => ({ id: makeId('shift'), workerId: '', participantId: '', date: todayISO(), startTime: '09:00', endTime: '11:00', location: '', supportType: 'Personal care', status: 'Scheduled', startedAt: '', endedAt: '', notes: '', adminNotes: '' });
 const INVOICE_STATUSES = ['Draft', 'Pending', 'Paid', 'Cancelled'];
 const BUSINESS_TXN_CLIENT_ID = '__business__';
@@ -260,6 +260,37 @@ async function loadSnapshot(user) {
   return { ok: true, payload: data?.payload };
 }
 const storageKeyFor = (user) => user?.id ? `${STORAGE_KEY}_${user.id}` : STORAGE_KEY;
+const EMPLOYEE_SESSION_KEY = 'kajola_employee_portal_session_v1';
+const employeePasswordHash = (value = '') => {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < String(value).length; i++) {
+    const ch = String(value).charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `${(h2 >>> 0).toString(36)}${(h1 >>> 0).toString(36)}`;
+};
+const normaliseUsername = (value = '') => String(value || '').trim().toLowerCase();
+const employeeLoginEnabled = (worker = {}) => worker.loginEnabled !== false && Boolean(normaliseUsername(worker.employeeUsername || worker.username));
+const findEmployeeLogin = (username, password) => {
+  const u = normaliseUsername(username);
+  const hash = employeePasswordHash(password);
+  if (!u || !password) return { ok: false, message: 'Enter your username and password.' };
+  for (let i = 0; i < window.localStorage.length; i += 1) {
+    const key = window.localStorage.key(i);
+    if (!key || !key.startsWith(STORAGE_KEY)) continue;
+    try {
+      const payload = normalisePayload(JSON.parse(window.localStorage.getItem(key) || '{}'));
+      const worker = payload.workers.find(w => employeeLoginEnabled(w) && normaliseUsername(w.employeeUsername || w.username) === u);
+      if (!worker) continue;
+      if ((worker.employeePasswordHash || worker.passwordHash) !== hash) return { ok: false, message: 'Password is incorrect.' };
+      return { ok: true, session: { workerId: worker.id, ownerStorageKey: key, username: u, signedInAt: new Date().toISOString() }, payload };
+    } catch {}
+  }
+  return { ok: false, message: 'Employee username was not found on this device.' };
+};
 
 export default function App() {
   const [active, setActive] = useState('Dashboard');
@@ -287,6 +318,7 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [theme, setTheme] = useState(() => localStorage.getItem('lg_flow_theme') || 'light');
   const [user, setUser] = useState(null);
+  const [employeeSession, setEmployeeSession] = useState(() => { try { return JSON.parse(localStorage.getItem(EMPLOYEE_SESSION_KEY) || 'null'); } catch { return null; } });
   const [authLoading, setAuthLoading] = useState(true);
   const [storageLoaded, setStorageLoaded] = useState(false);
   const [cloudChecked, setCloudChecked] = useState(false);
@@ -305,6 +337,19 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { setUser(session?.user || null); });
     return () => { mounted = false; listener?.subscription?.unsubscribe(); };
   }, []);
+
+  useEffect(() => {
+    if (!employeeSession?.ownerStorageKey || user?.id) return;
+    try {
+      const raw = localStorage.getItem(employeeSession.ownerStorageKey);
+      if (raw) { applyPayload(JSON.parse(raw)); setStorageLoaded(true); setCloudChecked(true); }
+      else { localStorage.removeItem(EMPLOYEE_SESSION_KEY); setEmployeeSession(null); }
+    } catch {
+      localStorage.removeItem(EMPLOYEE_SESSION_KEY); setEmployeeSession(null);
+    } finally {
+      setAuthLoading(false);
+    }
+  }, [employeeSession?.ownerStorageKey, user?.id]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -354,7 +399,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (authLoading || !user?.id) return;
+    if (authLoading || !user?.id || employeeSession?.workerId) return;
     setStorageLoaded(false);
     try {
       const raw = localStorage.getItem(storageKeyFor(user));
@@ -368,12 +413,12 @@ export default function App() {
   }, [authLoading, user?.id]);
 
   useEffect(() => {
-    if (!storageLoaded || !user?.id) return;
+    if (!storageLoaded || (!user?.id && !employeeSession?.ownerStorageKey)) return;
     const data = payloadWithFreshMeta();
     const snapshot = serialisePayload(data);
     if (snapshot === lastLocalSnapshotRef.current) return;
     lastLocalSnapshotRef.current = snapshot;
-    localStorage.setItem(storageKeyFor(user), snapshot);
+    localStorage.setItem(employeeSession?.ownerStorageKey || storageKeyFor(user), snapshot);
   }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers, shifts, risks, incidents, complaints, improvements, audits, auditReports, governanceReviews, documents]);
 
   // Cloud sync is manual only. Local changes are still saved immediately to this device.
@@ -709,7 +754,12 @@ export default function App() {
   };
 
   if (authLoading) return <LoadingScreen />;
-  if (!user) return <AuthGate />;
+  if (!user && employeeSession?.workerId) {
+    if (!storageLoaded) return <LoadingScreen message="Loading employee portal…" />;
+    const currentWorker = workers.find(w => w.id === employeeSession.workerId);
+    return <WorkerPortal employeeSession={employeeSession} business={business} worker={currentWorker} workers={workers} clients={clients} shifts={shifts} setShifts={setShifts} onSignOut={() => { localStorage.removeItem(EMPLOYEE_SESSION_KEY); setEmployeeSession(null); setStorageLoaded(false); }} />;
+  }
+  if (!user) return <AuthGate onEmployeeLogin={(session, payload) => { localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session)); setEmployeeSession(session); applyPayload(payload); setStorageLoaded(true); setCloudChecked(true); }} />;
 
   const displayName = getFirstName(user);
   const welcomeMessage = buildWelcomeMessage(user);
@@ -729,7 +779,7 @@ export default function App() {
 
   const role = user?.user_metadata?.kajola_role || user?.user_metadata?.role || window.localStorage.getItem('kajola_last_login_role') || 'admin';
   const currentWorker = workers.find(w => String(w.email || '').toLowerCase() === String(user?.email || '').toLowerCase());
-  if (role === 'worker' || role === 'employee' || currentWorker) return <WorkerPortal user={user} business={business} worker={currentWorker} workers={workers} clients={clients} shifts={shifts} setShifts={setShifts} onSignOut={async () => { await supabase.auth.signOut(); }} />;
+  if (role === 'worker' || role === 'employee') return <WorkerPortal user={user} business={business} worker={currentWorker} workers={workers} clients={clients} shifts={shifts} setShifts={setShifts} onSignOut={async () => { await supabase.auth.signOut(); }} />;
 
   const needsOnboarding = !business.name.trim();
   if (needsOnboarding) return <BusinessOnboarding business={business} onSave={saveBusiness} user={user} onLoadCloud={() => loadCloudData()} cloudLoading={cloudLoading} />;
@@ -1950,6 +2000,15 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
   const saveWorker = () => {
     if (!workerDraft.name.trim()) return alert('Please enter the worker name.');
     const savedWorker = normaliseWorker(workerDraft);
+    savedWorker.employeeUsername = normaliseUsername(savedWorker.employeeUsername || savedWorker.username);
+    if (savedWorker.employeeUsername && workers.some(w => w.id !== editingWorkerId && normaliseUsername(w.employeeUsername || w.username) === savedWorker.employeeUsername)) return alert('Employee username must be unique.');
+    if (savedWorker.temporaryPassword) {
+      savedWorker.employeePasswordHash = employeePasswordHash(savedWorker.temporaryPassword);
+      savedWorker.mustChangePassword = true;
+      savedWorker.lastPasswordResetAt = new Date().toISOString();
+      delete savedWorker.temporaryPassword;
+    }
+    if (savedWorker.employeeUsername && !savedWorker.employeePasswordHash) return alert('Set or generate a password for this employee login.');
     if (editingWorkerId) setWorkers(prev => prev.map(w => w.id === editingWorkerId ? { ...savedWorker, id: editingWorkerId, updatedAt: new Date().toISOString() } : w));
     else setWorkers(prev => [{ ...savedWorker, id: savedWorker.id || makeId('worker'), createdAt: new Date().toISOString() }, ...prev]);
     setWorkerDraft(emptyWorker()); setEditingWorkerId(null); setWorkerFormOpen(false);
@@ -1974,13 +2033,16 @@ function ComplianceWorkspace({ clients, invoices, totals, business, setBusiness,
       <Card title={editingWorkerId ? 'Edit Worker' : 'Add Worker'} action={<button type="button" className="text-link" onClick={() => setWorkerFormOpen(open => !open)}>{workerFormOpen ? 'Collapse' : '+ Add Worker'}</button>}>
         {!workerFormOpen && <p className="muted">Worker form is collapsed. Open it only when adding or editing an employee.</p>}
         {workerFormOpen && <>
-          <div className="grid"><Field label="Worker Name" value={workerDraft.name} onChange={e => updateWorkerDraft('name', e.target.value)} /><Field label="Role" value={workerDraft.role} onChange={e => updateWorkerDraft('role', e.target.value)} /><Field label="Email" type="email" value={workerDraft.email} onChange={e => updateWorkerDraft('email', e.target.value)} /><Field label="Phone" value={workerDraft.phone} onChange={e => updateWorkerDraft('phone', e.target.value)} /></div>
+          <div className="grid"><Field label="Worker Name" value={workerDraft.name} onChange={e => updateWorkerDraft('name', e.target.value)} /><Field label="Role" value={workerDraft.role} onChange={e => updateWorkerDraft('role', e.target.value)} /><Field label="Email (optional)" type="email" value={workerDraft.email} onChange={e => updateWorkerDraft('email', e.target.value)} /><Field label="Phone" value={workerDraft.phone} onChange={e => updateWorkerDraft('phone', e.target.value)} /></div>
+          <h4 className="section-label">Employee portal login</h4>
+          <div className="grid"><Field label="Unique Username" value={workerDraft.employeeUsername || ''} onChange={e => updateWorkerDraft('employeeUsername', e.target.value)} placeholder="e.g. john.smith" /><Field label={editingWorkerId ? 'New Password / Reset Password' : 'Password'} type="text" value={workerDraft.temporaryPassword || ''} onChange={e => updateWorkerDraft('temporaryPassword', e.target.value)} placeholder={editingWorkerId ? 'Leave blank to keep existing password' : 'Set employee password'} /><label className="field"><span>Login Enabled</span><select value={workerDraft.loginEnabled === false ? 'no' : 'yes'} onChange={e => updateWorkerDraft('loginEnabled', e.target.value === 'yes')}><option value="yes">Enabled</option><option value="no">Disabled</option></select></label><label className="field"><span>Generate Password</span><button type="button" onClick={() => updateWorkerDraft('temporaryPassword', Math.random().toString(36).slice(2, 6).toUpperCase() + '-' + Math.random().toString(36).slice(2, 6).toUpperCase())}>Generate New Password</button></label></div>
+          <p className="muted">Employee usernames and passwords are separate from admin email sign-in. These credentials only open the employee portal.</p>
           <h4 className="section-label">Worker compliance dates</h4>
           <div className="grid">{DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => <Field key={item.key} type="date" label={`${item.label}${item.optional ? ' (optional)' : ''}`} value={workerDraft[item.key] || ''} onChange={e => updateWorkerDraft(item.key, e.target.value)} />)}<Field label="Notes" multiline value={workerDraft.notes || ''} onChange={e => updateWorkerDraft('notes', e.target.value)} /></div>
           <button className="primary" onClick={saveWorker}>{editingWorkerId ? 'Update Worker' : 'Save Worker'}</button>{editingWorkerId && <button onClick={() => { setWorkerDraft(emptyWorker()); setEditingWorkerId(null); setWorkerFormOpen(false); }}>Cancel Edit</button>}
         </>}
       </Card>
-      <Card title="Employees Compliance Register"><div className="client-table compliance-register"><div className="client-table-head"><span>Worker</span><span>Role</span><span>Critical Status</span><span>Due / Missing Items</span><span>Actions</span></div><Records rows={workerRows} empty="No workers added yet." render={row => { const reviewItems = row.items.filter(item => ['due','overdue','missing'].includes(item.status.tone)); return <div className="client-table-row" key={row.worker.id}><div><b>{row.worker.name}</b><small>{row.worker.email || row.worker.phone || 'No contact details'}</small></div><div><b>{row.worker.role || '-'}</b><small>{row.worker.notes || 'No notes'}</small></div><div><span className={`traffic-pill ${row.overall.tone}`}>{row.overall.label}</span><small>{statusSummary(row.items.find(i => i.status.sort === row.overall.sort)?.date || '')}</small></div><div><small>{reviewItems.length ? reviewItems.slice(0, 3).map(i => i.label).join(', ') : 'All current'}</small></div><div className="actions"><button onClick={() => editWorker(row.worker)}>Edit</button><button className="danger" onClick={() => deleteWorker(row.worker.id)}>Delete</button></div></div>; }} /></div></Card>
+      <Card title="Employees Compliance Register"><div className="client-table compliance-register"><div className="client-table-head"><span>Worker</span><span>Role</span><span>Critical Status</span><span>Due / Missing Items</span><span>Actions</span></div><Records rows={workerRows} empty="No workers added yet." render={row => { const reviewItems = row.items.filter(item => ['due','overdue','missing'].includes(item.status.tone)); return <div className="client-table-row" key={row.worker.id}><div><b>{row.worker.name}</b><small>{row.worker.employeeUsername ? `@${row.worker.employeeUsername}` : (row.worker.email || row.worker.phone || 'No login username')}</small></div><div><b>{row.worker.role || '-'}</b><small>{row.worker.notes || 'No notes'}</small></div><div><span className={`traffic-pill ${row.overall.tone}`}>{row.overall.label}</span><small>{statusSummary(row.items.find(i => i.status.sort === row.overall.sort)?.date || '')}</small></div><div><small>{reviewItems.length ? reviewItems.slice(0, 3).map(i => i.label).join(', ') : 'All current'}</small></div><div className="actions"><button onClick={() => editWorker(row.worker)}>Edit</button><button className="danger" onClick={() => deleteWorker(row.worker.id)}>Delete</button></div></div>; }} /></div></Card>
     </>}
 
     {section === 'Participants' && <Card title="Participant Compliance"><div className="compliance-table"><div className="compliance-table-head"><span>Participant</span><span>Plan Review</span><span>Consent</span><span>Agreement</span><span>Risk Review</span><span>Status</span></div><Records rows={participantRows} empty="No participants yet." render={row => <div className="compliance-table-row" key={row.client.id}><div><b>{row.client.name}</b><small>{row.client.ndisNumber || 'NDIS missing'}</small></div>{row.items.map(item => <ComplianceDateCell key={item.key} item={item} />)}<span className={`traffic-pill ${row.overall.tone}`}>{row.overall.label}</span></div>} /></div></Card>}
@@ -2338,10 +2400,10 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
   </>;
 }
 
-function WorkerPortal({ user, business, worker, workers = [], clients = [], shifts = [], setShifts = () => {}, onSignOut }) {
+function WorkerPortal({ user, employeeSession, business, worker, workers = [], clients = [], shifts = [], setShifts = () => {}, onSignOut }) {
   const [active, setActive] = useState('Today');
   const email = String(user?.email || '').toLowerCase();
-  const matchedWorker = worker || workers.find(w => String(w.email || '').toLowerCase() === email);
+  const matchedWorker = worker || workers.find(w => employeeSession?.workerId ? w.id === employeeSession.workerId : String(w.email || '').toLowerCase() === email);
   const workerShifts = shifts.filter(s => matchedWorker ? s.workerId === matchedWorker.id : String(s.workerEmail || '').toLowerCase() === email);
   const today = todayISO();
   const visible = active === 'Today' ? workerShifts.filter(s => s.date === today) : workerShifts;
@@ -2353,8 +2415,8 @@ function WorkerPortal({ user, business, worker, workers = [], clients = [], shif
   return <div className="worker-shell">
     <header className="worker-top"><div><BrandMark compact /><b>{business?.name || 'Kajola Care'}</b><small>Employee Portal</small></div><button className="ghost" onClick={onSignOut}>Sign out</button></header>
     <main className="worker-main">
-      <section className="worker-hero"><small>Welcome</small><h1>{matchedWorker?.name || getFirstName(user)}</h1><p>View assigned shifts, sign in/out and submit shift notes.</p></section>
-      {!matchedWorker && <div className="auth-message"><b>Employee Profile Not Found</b><br />Your account is not yet linked to an employee record. Ask an admin to add {user?.email} under Compliance &gt; Employees before assigning shifts.</div>}
+      <section className="worker-hero"><small>Welcome</small><h1>{matchedWorker?.name || employeeSession?.username || getFirstName(user)}</h1><p>View assigned shifts, sign in/out and submit shift notes.</p></section>
+      {!matchedWorker && <div className="auth-message"><b>Employee Profile Not Found</b><br />Your account is not yet linked to an employee record. Ask an admin to create or enable your employee username under Compliance &gt; Employees before assigning shifts.</div>}
       {matchedWorker && workerShifts.length === 0 && <div className="auth-message"><b>No assigned shifts yet</b><br />Your employee profile is active, but no client shifts have been assigned to you yet.</div>}
       <nav className="worker-tabs">{['Today','All Shifts','Notes'].map(tab => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}>{tab}</button>)}</nav>
       <div className="worker-shift-list"><Records rows={visible} empty="No assigned shifts found." render={shift => <WorkerShiftCard key={shift.id} shift={shift} client={findClient(shift.participantId)} onStart={() => startShift(shift)} onEnd={() => endShift(shift)} onNotes={notes => patchShift(shift.id, { notes })} />} /></div>
@@ -2415,7 +2477,7 @@ function LoadingScreen({ message = 'Securing your workspace…' }) {
   return <div className="auth-shell"><div className="auth-card"><BrandMark /><BrandWordmark hero /><p>{message}</p></div></div>;
 }
 
-function AuthGate() {
+function AuthGate({ onEmployeeLogin }) {
   const [mode, setMode] = useState('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -2455,12 +2517,21 @@ function AuthGate() {
 
   async function submit(e) {
     e.preventDefault();
+    if (loginRole === 'worker') {
+      if (!email || !password) { setMessage('Enter your employee username and password.'); return; }
+      setBusy(true); setMessage('');
+      const result = findEmployeeLogin(email, password);
+      setBusy(false);
+      if (!result.ok) setMessage(result.message);
+      else { setMessage('Signed in. Loading employee portal…'); onEmployeeLogin?.(result.session, result.payload); }
+      return;
+    }
     if (!supabase) { setMessage('Supabase is not configured.'); return; }
     if (!email || !password) { setMessage('Enter your email and password.'); return; }
-    window.localStorage.setItem('kajola_last_login_role', loginRole);
+    window.localStorage.setItem('kajola_last_login_role', 'admin');
     setBusy(true); setMessage('');
     const result = mode === 'signup'
-      ? await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName || 'Kajola Care User', kajola_role: loginRole } } })
+      ? await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName || 'Kajola Care User', kajola_role: 'admin' } } })
       : await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (result.error) setMessage(result.error.message);
@@ -2471,17 +2542,18 @@ function AuthGate() {
   return <div className="auth-shell">
     <section className="auth-hero"><BrandMark /><BrandWordmark hero /><p>Care • Connect • Empower</p><div className="auth-glass"><b>{loginRole === 'admin' ? 'Admin workspace' : 'Employee portal'}</b><span>{loginRole === 'admin' ? 'Participants, invoices, finance and snapshots protected by Supabase Auth.' : 'Workers can view assigned shifts, clock in/out and submit shift notes.'}</span></div></section>
     <form className="auth-card" onSubmit={submit}>
-      <div className="auth-role-tabs"><button type="button" className={loginRole === 'admin' ? 'active' : ''} onClick={() => setLoginRole('admin')}>Admin Sign In</button><button type="button" className={loginRole === 'worker' ? 'active' : ''} onClick={() => setLoginRole('worker')}>Employee Sign In</button></div>
+      <div className="auth-role-tabs"><button type="button" className={loginRole === 'admin' ? 'active' : ''} onClick={() => { setLoginRole('admin'); setEmail(''); setPassword(''); }}>Admin Sign In</button><button type="button" className={loginRole === 'worker' ? 'active' : ''} onClick={() => { setLoginRole('worker'); setMode('signin'); setEmail(''); setPassword(''); }}>Employee Sign In</button></div>
       <h2>{mode === 'signup' ? 'Create your account' : loginRole === 'admin' ? 'Admin sign in' : 'Employee sign in'}</h2>
       <p>{mode === 'signup' ? (loginRole === 'admin' ? 'Start a secure Kajola Care admin workspace.' : 'Create an employee account for the worker portal.') : (loginRole === 'admin' ? 'Sign in to continue to the admin dashboard.' : 'Sign in to continue to your assigned shifts.')}</p>
-      {mode === 'signup' && <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />}
-      <Field label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
+      {mode === 'signup' && loginRole === 'admin' && <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />}
+      <Field label={loginRole === 'admin' ? 'Email' : 'Username'} type={loginRole === 'admin' ? 'email' : 'text'} value={email} onChange={e => setEmail(e.target.value)} autoComplete={loginRole === 'admin' ? 'email' : 'username'} />
       <Field label="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
       {message && <div className="auth-message">{message}</div>}
       <button className="primary" disabled={busy}>{busy ? 'Please wait…' : mode === 'signup' ? 'Sign up' : 'Sign in'}</button>
-      <button type="button" className="text-link auth-switch" onClick={() => { setMode(mode === 'signup' ? 'signin' : 'signup'); setMessage(''); }}>
+      {loginRole === 'admin' && <button type="button" className="text-link auth-switch" onClick={() => { setMode(mode === 'signup' ? 'signin' : 'signup'); setMessage(''); }}>
         {mode === 'signup' ? 'Already have an account? Sign in' : 'Need an account? Sign up'}
-      </button>
+      </button>}
+      {loginRole === 'worker' && <p className="muted">Ask your administrator for your employee username and password.</p>}
     </form>
   </div>;
 }
