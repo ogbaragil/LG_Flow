@@ -107,7 +107,7 @@ const normaliseBusiness = (business = {}) => {
     businessCompliance: getBusinessComplianceItems(merged),
   };
 };
-const SECTION_KEYS = ['business', 'clients', 'invoices', 'transactions', 'workers', 'risks', 'incidents', 'complaints', 'improvements', 'audits', 'auditReports', 'governanceReviews', 'documents'];
+const SECTION_KEYS = ['business', 'clients', 'invoices', 'transactions', 'workers', 'shifts', 'risks', 'incidents', 'complaints', 'improvements', 'audits', 'auditReports', 'governanceReviews', 'documents'];
 const sectionUpdatedAt = (payload, section) => payload?._meta?.sectionsUpdatedAt?.[section] || '';
 const isMeaningfulBusiness = (business = {}) => {
   const b = normaliseBusiness(business);
@@ -134,6 +134,7 @@ const normalisePayload = (payload = {}) => {
     invoices: Array.isArray(payload.invoices) ? payload.invoices : [],
     transactions: normaliseTransactions(payload.transactions, normalisedBusiness),
     workers: normaliseWorkers(payload.workers || []),
+    shifts: Array.isArray(payload.shifts) ? payload.shifts : [],
     risks: Array.isArray(payload.risks) ? payload.risks : [],
     incidents: Array.isArray(payload.incidents) ? payload.incidents : [],
     complaints: Array.isArray(payload.complaints) ? payload.complaints : [],
@@ -147,7 +148,7 @@ const normalisePayload = (payload = {}) => {
 };
 const stripMeta = (payload = {}) => {
   const p = normalisePayload(payload);
-  return { business: p.business, clients: p.clients, invoices: p.invoices, transactions: p.transactions, workers: p.workers, risks: p.risks, incidents: p.incidents, complaints: p.complaints, improvements: p.improvements, audits: p.audits, auditReports: p.auditReports, governanceReviews: p.governanceReviews, documents: p.documents };
+  return { business: p.business, clients: p.clients, invoices: p.invoices, transactions: p.transactions, workers: p.workers, shifts: p.shifts, risks: p.risks, incidents: p.incidents, complaints: p.complaints, improvements: p.improvements, audits: p.audits, auditReports: p.auditReports, governanceReviews: p.governanceReviews, documents: p.documents };
 };
 const mergePayloads = (localPayload = {}, cloudPayload = {}) => {
   const local = normalisePayload(localPayload);
@@ -207,7 +208,8 @@ const emptyClient = { name: '', ndisNumber: '', email: '', phone: '', address: '
 const emptyLine = () => { const item = DEFAULT_PRICING_ITEMS[0]; return { id: makeId('line'), itemCode: item.itemNumber, itemLabel: item.label, serviceDate: todayISO(), unitType: item.unitType, quantity: '1', rate: String(item.rate), notes: '' }; };
 const emptyInvoice = () => ({ clientId: '', dueDate: addDaysISO(7), notes: '', lines: [emptyLine()] });
 const emptyTxn = { clientId: '', type: 'expense', status: 'pending', category: '', description: '', amount: '', date: todayISO() };
-const emptyWorker = () => Object.fromEntries([['id', makeId('worker')], ['name', ''], ['role', ''], ['email', ''], ['phone', ''], ['notes', ''], ...DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => [item.key, ''])]);
+const emptyWorker = () => Object.fromEntries([['id', makeId('worker')], ['name', ''], ['role', ''], ['email', ''], ['phone', ''], ['loginEnabled', true], ['notes', ''], ...DEFAULT_WORKER_COMPLIANCE_ITEMS.map(item => [item.key, ''])]);
+const emptyShift = () => ({ id: makeId('shift'), workerId: '', participantId: '', date: todayISO(), startTime: '09:00', endTime: '11:00', location: '', supportType: 'Personal care', status: 'Scheduled', startedAt: '', endedAt: '', notes: '', adminNotes: '' });
 const INVOICE_STATUSES = ['Draft', 'Pending', 'Paid', 'Cancelled'];
 const BUSINESS_TXN_CLIENT_ID = '__business__';
 const LEGACY_WORKER_TEMPLATE_NAMES = new Set([
@@ -266,6 +268,7 @@ export default function App() {
   const [invoices, setInvoices] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [workers, setWorkers] = useState([]);
+  const [shifts, setShifts] = useState([]);
   const [risks, setRisks] = useState([]);
   const [incidents, setIncidents] = useState([]);
   const [complaints, setComplaints] = useState([]);
@@ -331,6 +334,7 @@ export default function App() {
     setInvoices(next.invoices);
     setTransactions(next.transactions);
     setWorkers(next.workers);
+    setShifts(next.shifts);
     setRisks(next.risks);
     setIncidents(next.incidents);
     setComplaints(next.complaints);
@@ -341,7 +345,7 @@ export default function App() {
     setDocuments(next.documents);
   };
 
-  const currentPayload = () => normalisePayload({ business, clients, invoices, transactions, workers, risks, incidents, complaints, improvements, audits, auditReports, governanceReviews, documents, _meta: { sectionsUpdatedAt: sectionUpdatedAtRef.current } });
+  const currentPayload = () => normalisePayload({ business, clients, invoices, transactions, workers, shifts, risks, incidents, complaints, improvements, audits, auditReports, governanceReviews, documents, _meta: { sectionsUpdatedAt: sectionUpdatedAtRef.current } });
   const serialisePayload = (data) => JSON.stringify(normalisePayload(data || currentPayload()));
   const payloadWithFreshMeta = () => {
     const data = currentPayload();
@@ -355,9 +359,9 @@ export default function App() {
     try {
       const raw = localStorage.getItem(storageKeyFor(user));
       if (raw) applyPayload(JSON.parse(raw));
-      else applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], auditReports: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } });
+      else applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], shifts: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], auditReports: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } });
     } catch {
-      applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], auditReports: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } });
+      applyPayload({ business: EMPTY_BUSINESS, clients: [], invoices: [], transactions: [], workers: [], shifts: [], risks: [], incidents: [], complaints: [], improvements: [], audits: [], auditReports: [], governanceReviews: [], documents: [], _meta: { sectionsUpdatedAt: {} } });
     } finally {
       setStorageLoaded(true);
     }
@@ -370,7 +374,7 @@ export default function App() {
     if (snapshot === lastLocalSnapshotRef.current) return;
     lastLocalSnapshotRef.current = snapshot;
     localStorage.setItem(storageKeyFor(user), snapshot);
-  }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers, risks, incidents, complaints, improvements, audits, auditReports, governanceReviews, documents]);
+  }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers, shifts, risks, incidents, complaints, improvements, audits, auditReports, governanceReviews, documents]);
 
   // Cloud sync is manual only. Local changes are still saved immediately to this device.
   useEffect(() => {
@@ -723,6 +727,10 @@ export default function App() {
 
   if (!storageLoaded || !cloudChecked || cloudLoading) return <LoadingScreen message="Loading your business workspace…" />;
 
+  const role = user?.user_metadata?.kajola_role || user?.user_metadata?.role || window.localStorage.getItem('kajola_last_login_role') || 'admin';
+  const currentWorker = workers.find(w => String(w.email || '').toLowerCase() === String(user?.email || '').toLowerCase());
+  if (role === 'worker' || role === 'employee' || currentWorker) return <WorkerPortal user={user} business={business} worker={currentWorker} workers={workers} clients={clients} shifts={shifts} setShifts={setShifts} onSignOut={async () => { await supabase.auth.signOut(); }} />;
+
   const needsOnboarding = !business.name.trim();
   if (needsOnboarding) return <BusinessOnboarding business={business} onSave={saveBusiness} user={user} onLoadCloud={() => loadCloudData()} cloudLoading={cloudLoading} />;
 
@@ -748,8 +756,8 @@ export default function App() {
       {active === 'Finance' && <FinanceWorkspace business={business} clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} updateStatus={updateTxnStatus} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} risks={risks} setRisks={setRisks} incidents={incidents} setIncidents={setIncidents} complaints={complaints} setComplaints={setComplaints} improvements={improvements} setImprovements={setImprovements} audits={audits} setAudits={setAudits} auditReports={auditReports} setAuditReports={setAuditReports} governanceReviews={governanceReviews} setGovernanceReviews={setGovernanceReviews} documents={documents} setDocuments={setDocuments} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
       {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} risks={risks} incidents={incidents} complaints={complaints} improvements={improvements} audits={audits} auditReports={auditReports} governanceReviews={governanceReviews} documents={documents} workers={workers} />}
-      {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
-      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setAuditReports([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
+      {active === 'Schedules' && <SchedulesWorkspace clients={clients} workers={workers} shifts={shifts} setShifts={setShifts} />}
+      {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setShifts([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setAuditReports([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
     </main>
   </div>
   <MobileShell
@@ -771,6 +779,8 @@ export default function App() {
     transactions={transactions}
     workers={workers}
     setWorkers={setWorkers}
+    shifts={shifts}
+    setShifts={setShifts}
     risks={risks}
     setRisks={setRisks}
     incidents={incidents}
@@ -822,7 +832,7 @@ export default function App() {
     cancelTxn={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}
     setBusiness={setBusiness}
     saveBusiness={saveBusiness}
-    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setAuditReports([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>}
+    settings={<Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setShifts([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setAuditReports([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>}
   />
 </>;
 }
@@ -835,7 +845,7 @@ function BrandMark({ compact = false }) {
   return <div className={`kajola-mark ${compact ? 'compact' : ''}`}><img src="/icons/kajola-care-logo.png" alt="Kajola Care" /></div>;
 }
 
-function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, auditReports = [], setAuditReports = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
+function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, shifts = [], setShifts = () => {}, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, auditReports = [], setAuditReports = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const activeClients = clients.filter(c => !c.archived);
@@ -858,7 +868,7 @@ function MobileShell({ active, setActive, complianceSection, setComplianceSectio
       {active === 'Finance' && <MobileFinance business={business} clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} risks={risks} setRisks={setRisks} incidents={incidents} setIncidents={setIncidents} complaints={complaints} setComplaints={setComplaints} improvements={improvements} setImprovements={setImprovements} audits={audits} setAudits={setAudits} auditReports={auditReports} setAuditReports={setAuditReports} governanceReviews={governanceReviews} setGovernanceReviews={setGovernanceReviews} documents={documents} setDocuments={setDocuments} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
       {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} risks={risks} incidents={incidents} complaints={complaints} improvements={improvements} audits={audits} auditReports={auditReports} governanceReviews={governanceReviews} documents={documents} workers={workers} />}
-      {active === 'Schedules' && <FutureWorkspace title="Schedules" description="Roster and appointment scheduling is planned for a future release." />}
+      {active === 'Schedules' && <SchedulesWorkspace clients={clients} workers={workers} shifts={shifts} setShifts={setShifts} />}
       {active === 'Settings' && <div className="mobile-settings"><MobileMore setActive={setActive} />{settings}</div>}
     </main>
     <button className="mobile-fab" onClick={() => setFabOpen(v => !v)}>+</button>
@@ -2209,6 +2219,86 @@ function NdisPricingManager({ items, onChange, onSave }) {
   </div>;
 }
 
+
+function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts = () => {} }) {
+  const [draft, setDraft] = useState(emptyShift());
+  const [editingId, setEditingId] = useState(null);
+  const activeWorkers = workers.filter(w => !w.archived);
+  const activeClients = clients.filter(c => !c.archived);
+  const findWorker = (id) => workers.find(w => w.id === id);
+  const findClient = (id) => clients.find(c => c.id === id);
+  const updateDraft = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
+  const saveShift = () => {
+    if (!draft.workerId) return alert('Please choose a support worker.');
+    if (!draft.participantId) return alert('Please choose a participant.');
+    const clean = { ...draft, updatedAt: new Date().toISOString(), status: draft.status || 'Scheduled' };
+    if (editingId) setShifts(prev => prev.map(shift => shift.id === editingId ? { ...clean, id: editingId } : shift));
+    else setShifts(prev => [{ ...clean, id: clean.id || makeId('shift'), createdAt: new Date().toISOString() }, ...prev]);
+    setDraft(emptyShift());
+    setEditingId(null);
+  };
+  const editShift = (shift) => { setDraft({ ...emptyShift(), ...shift }); setEditingId(shift.id); window.scrollTo(0, 0); };
+  const deleteShift = (id) => { if (confirm('Delete this assigned shift?')) setShifts(prev => prev.filter(shift => shift.id !== id)); };
+  const upcoming = [...shifts].sort((a,b) => `${a.date || ''}${a.startTime || ''}`.localeCompare(`${b.date || ''}${b.startTime || ''}`));
+
+  return <>
+    <Card title={editingId ? 'Edit Assigned Shift' : 'Assign Support Worker Shift'} action={`${shifts.length} shifts`}>
+      <p>Create shifts for carers/support workers. Employee login will show only the worker’s assigned shifts, clock in/out controls and shift-note entry.</p>
+      <div className="grid">
+        <label><span>Support Worker</span><select value={draft.workerId} onChange={e => updateDraft('workerId', e.target.value)}><option value="">Select worker</option>{activeWorkers.map(w => <option key={w.id} value={w.id}>{w.name || w.email}</option>)}</select></label>
+        <label><span>Participant</span><select value={draft.participantId} onChange={e => updateDraft('participantId', e.target.value)}><option value="">Select participant</option>{activeClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <Field label="Date" type="date" value={draft.date} onChange={e => updateDraft('date', e.target.value)} />
+        <Field label="Start Time" type="time" value={draft.startTime} onChange={e => updateDraft('startTime', e.target.value)} />
+        <Field label="End Time" type="time" value={draft.endTime} onChange={e => updateDraft('endTime', e.target.value)} />
+        <Field label="Location" value={draft.location} onChange={e => updateDraft('location', e.target.value)} placeholder="Participant home / community access" />
+        <Field label="Support Type" value={draft.supportType} onChange={e => updateDraft('supportType', e.target.value)} />
+        <label><span>Status</span><select value={draft.status} onChange={e => updateDraft('status', e.target.value)}>{['Scheduled','In Progress','Completed','Cancelled','Missed'].map(x => <option key={x}>{x}</option>)}</select></label>
+      </div>
+      <Field label="Worker Instructions / Admin Notes" multiline value={draft.adminNotes || ''} onChange={e => updateDraft('adminNotes', e.target.value)} />
+      <button className="primary" onClick={saveShift}>{editingId ? 'Update Shift' : 'Save Shift'}</button>
+      {editingId && <button onClick={() => { setEditingId(null); setDraft(emptyShift()); }}>Cancel Edit</button>}
+    </Card>
+    <Card title="Assigned Shifts"><div className="client-table"><div className="client-table-head"><span>Shift</span><span>Worker</span><span>Participant</span><span>Status</span><span>Actions</span></div><Records rows={upcoming} empty="No shifts assigned yet." render={shift => <div className="client-table-row" key={shift.id}><div><b>{fmt(shift.date)} · {shift.startTime}–{shift.endTime}</b><small>{shift.location || shift.supportType || 'No location'}</small></div><div><b>{findWorker(shift.workerId)?.name || 'Unassigned'}</b><small>{findWorker(shift.workerId)?.email || '-'}</small></div><div><b>{findClient(shift.participantId)?.name || 'Participant missing'}</b><small>{shift.adminNotes || 'No admin notes'}</small></div><div><span className={`traffic-pill ${shift.status === 'Completed' ? 'current' : shift.status === 'In Progress' ? 'due' : shift.status === 'Missed' ? 'overdue' : ''}`}>{shift.status || 'Scheduled'}</span></div><div className="actions"><button onClick={() => editShift(shift)}>Edit</button><button className="danger" onClick={() => deleteShift(shift.id)}>Delete</button></div></div>} /></div></Card>
+  </>;
+}
+
+function WorkerPortal({ user, business, worker, workers = [], clients = [], shifts = [], setShifts = () => {}, onSignOut }) {
+  const [active, setActive] = useState('Today');
+  const email = String(user?.email || '').toLowerCase();
+  const matchedWorker = worker || workers.find(w => String(w.email || '').toLowerCase() === email);
+  const workerShifts = shifts.filter(s => matchedWorker ? s.workerId === matchedWorker.id : String(s.workerEmail || '').toLowerCase() === email);
+  const today = todayISO();
+  const visible = active === 'Today' ? workerShifts.filter(s => s.date === today) : workerShifts;
+  const findClient = (id) => clients.find(c => c.id === id);
+  const patchShift = (id, patch) => setShifts(prev => prev.map(s => s.id === id ? { ...s, ...patch, updatedAt: new Date().toISOString() } : s));
+  const startShift = (shift) => patchShift(shift.id, { status: 'In Progress', startedAt: shift.startedAt || new Date().toISOString() });
+  const endShift = (shift) => patchShift(shift.id, { status: 'Completed', endedAt: new Date().toISOString() });
+
+  return <div className="worker-shell">
+    <header className="worker-top"><div><BrandMark compact /><b>{business?.name || 'Kajola Care'}</b><small>Employee Portal</small></div><button className="ghost" onClick={onSignOut}>Sign out</button></header>
+    <main className="worker-main">
+      <section className="worker-hero"><small>Welcome</small><h1>{matchedWorker?.name || getFirstName(user)}</h1><p>View assigned shifts, sign in/out and submit shift notes.</p></section>
+      {!matchedWorker && <div className="auth-message">This account is in employee mode, but no worker profile email matches {user?.email}. Ask an admin to add this email to Employees Compliance.</div>}
+      <nav className="worker-tabs">{['Today','All Shifts','Notes'].map(tab => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}>{tab}</button>)}</nav>
+      <div className="worker-shift-list"><Records rows={visible} empty="No assigned shifts found." render={shift => <WorkerShiftCard key={shift.id} shift={shift} client={findClient(shift.participantId)} onStart={() => startShift(shift)} onEnd={() => endShift(shift)} onNotes={notes => patchShift(shift.id, { notes })} />} /></div>
+    </main>
+  </div>;
+}
+
+function WorkerShiftCard({ shift, client, onStart, onEnd, onNotes }) {
+  const [notes, setNotes] = useState(shift.notes || '');
+  useEffect(() => setNotes(shift.notes || ''), [shift.id, shift.notes]);
+  return <article className="worker-shift-card">
+    <div className="worker-shift-head"><div><small>{fmt(shift.date)} · {shift.startTime}–{shift.endTime}</small><h3>{client?.name || 'Assigned participant'}</h3></div><span className="traffic-pill current">{shift.status || 'Scheduled'}</span></div>
+    <p>{shift.location || 'Location not entered'} · {shift.supportType || 'Support shift'}</p>
+    {shift.adminNotes && <p><b>Admin notes:</b> {shift.adminNotes}</p>}
+    <div className="worker-actions"><button className="primary" disabled={shift.status === 'In Progress' || shift.status === 'Completed'} onClick={onStart}>Sign into shift</button><button disabled={shift.status !== 'In Progress'} onClick={onEnd}>Sign out of shift</button></div>
+    <Field label="Shift Notes" multiline value={notes} onChange={e => setNotes(e.target.value)} placeholder="Enter progress notes, observations, concerns or handover notes." />
+    <button onClick={() => onNotes(notes)}>Save Notes</button>
+    <small>{shift.startedAt ? `Started: ${new Date(shift.startedAt).toLocaleString()}` : 'Not started'} {shift.endedAt ? ` · Ended: ${new Date(shift.endedAt).toLocaleString()}` : ''}</small>
+  </article>;
+}
+
 function BusinessOnboarding({ business, onSave, user, onLoadCloud, cloudLoading }) {
   const [draft, setDraft] = useState({ ...EMPTY_BUSINESS, ...business });
   const updateDraft = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
@@ -2253,6 +2343,7 @@ function AuthGate() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [loginRole, setLoginRole] = useState('admin');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [setupUrl, setSetupUrl] = useState('');
@@ -2289,9 +2380,10 @@ function AuthGate() {
     e.preventDefault();
     if (!supabase) { setMessage('Supabase is not configured.'); return; }
     if (!email || !password) { setMessage('Enter your email and password.'); return; }
+    window.localStorage.setItem('kajola_last_login_role', loginRole);
     setBusy(true); setMessage('');
     const result = mode === 'signup'
-      ? await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName || 'Kajola Care User' } } })
+      ? await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName || 'Kajola Care User', kajola_role: loginRole } } })
       : await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (result.error) setMessage(result.error.message);
@@ -2300,10 +2392,11 @@ function AuthGate() {
   }
 
   return <div className="auth-shell">
-    <section className="auth-hero"><BrandMark /><BrandWordmark hero /><p>Care • Connect • Empower</p><div className="auth-glass"><b>Private cloud workspace</b><span>Participants, invoices, finance and snapshots protected by Supabase Auth.</span></div></section>
+    <section className="auth-hero"><BrandMark /><BrandWordmark hero /><p>Care • Connect • Empower</p><div className="auth-glass"><b>{loginRole === 'admin' ? 'Admin workspace' : 'Employee portal'}</b><span>{loginRole === 'admin' ? 'Participants, invoices, finance and snapshots protected by Supabase Auth.' : 'Workers can view assigned shifts, clock in/out and submit shift notes.'}</span></div></section>
     <form className="auth-card" onSubmit={submit}>
-      <h2>{mode === 'signup' ? 'Create your account' : 'Welcome back'}</h2>
-      <p>{mode === 'signup' ? 'Start a secure Kajola Care workspace.' : 'Sign in to continue to your dashboard.'}</p>
+      <div className="auth-role-tabs"><button type="button" className={loginRole === 'admin' ? 'active' : ''} onClick={() => setLoginRole('admin')}>Admin Sign In</button><button type="button" className={loginRole === 'worker' ? 'active' : ''} onClick={() => setLoginRole('worker')}>Employee Sign In</button></div>
+      <h2>{mode === 'signup' ? 'Create your account' : loginRole === 'admin' ? 'Admin sign in' : 'Employee sign in'}</h2>
+      <p>{mode === 'signup' ? (loginRole === 'admin' ? 'Start a secure Kajola Care admin workspace.' : 'Create an employee account for the worker portal.') : (loginRole === 'admin' ? 'Sign in to continue to the admin dashboard.' : 'Sign in to continue to your assigned shifts.')}</p>
       {mode === 'signup' && <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />}
       <Field label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
       <Field label="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
