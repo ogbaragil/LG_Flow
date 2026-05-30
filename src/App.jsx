@@ -890,7 +890,7 @@ export default function App() {
       {active === 'Finance' && <FinanceWorkspace business={business} clients={clients.filter(c => !c.archived)} transactions={transactions} invoices={invoices} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} updateStatus={updateTxnStatus} del={id => setTransactions(p => p.filter(t => t.id !== id))} cancel={() => { setEditingTxn(null); setTxnForm(emptyTxn); }}/>} 
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} risks={risks} setRisks={setRisks} incidents={incidents} setIncidents={setIncidents} complaints={complaints} setComplaints={setComplaints} improvements={improvements} setImprovements={setImprovements} audits={audits} setAudits={setAudits} auditReports={auditReports} setAuditReports={setAuditReports} governanceReviews={governanceReviews} setGovernanceReviews={setGovernanceReviews} documents={documents} setDocuments={setDocuments} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
       {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} risks={risks} incidents={incidents} complaints={complaints} improvements={improvements} audits={audits} auditReports={auditReports} governanceReviews={governanceReviews} documents={documents} workers={workers} />}
-      {active === 'Schedules' && <SchedulesWorkspace clients={clients} workers={workers} shifts={shifts} setShifts={setShifts} />}
+      {active === 'Schedules' && <SchedulesWorkspace clients={clients} workers={workers} shifts={shifts} setShifts={setShifts} invoices={invoices} setInvoices={setInvoices} pricingItems={pricingItems} />}
       {active === 'Settings' && <Settings pricingItems={pricingItems} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} clients={clients} invoices={invoices} transactions={transactions} backup={backup} restore={restore} clear={() => { if (confirm('Clear local data on this device? Your Supabase cloud snapshot will not be overwritten.')) { skipNextAutoSyncRef.current = true; sectionUpdatedAtRef.current = {}; setBusiness(normaliseBusiness(EMPTY_BUSINESS)); setClients([]); setInvoices([]); setTransactions([]); setWorkers([]); setShifts([]); setRisks([]); setIncidents([]); setComplaints([]); setImprovements([]); setAudits([]); setAuditReports([]); setGovernanceReviews([]); setDocuments([]); localStorage.removeItem(storageKeyFor(user)); } }} user={user} sync={async () => { const data = payloadWithFreshMeta(); const r = await syncSnapshot(data, user); if (r.ok) lastCloudSnapshotRef.current = serialisePayload(data); showNotice(r.message); }} load={async () => loadCloudData()}/>} 
     </main>
   </div>
@@ -1002,7 +1002,7 @@ function MobileShell({ active, setActive, complianceSection, setComplianceSectio
       {active === 'Finance' && <MobileFinance business={business} clients={activeClients} transactions={transactions} form={txnForm} setForm={setTxnForm} editing={editingTxn} save={saveTxn} edit={editTxn} del={deleteTxn} cancel={cancelTxn} />}
       {active === 'Compliance' && <ComplianceWorkspace clients={clients} invoices={invoices} totals={totals} business={business} setBusiness={setBusiness} saveBusiness={saveBusiness} workers={workers} setWorkers={setWorkers} risks={risks} setRisks={setRisks} incidents={incidents} setIncidents={setIncidents} complaints={complaints} setComplaints={setComplaints} improvements={improvements} setImprovements={setImprovements} audits={audits} setAudits={setAudits} auditReports={auditReports} setAuditReports={setAuditReports} governanceReviews={governanceReviews} setGovernanceReviews={setGovernanceReviews} documents={documents} setDocuments={setDocuments} initialSection={complianceSection} onSectionChange={setComplianceSection} />}
       {active === 'Reports' && <ReportsWorkspace business={business} transactions={transactions} clients={clients} risks={risks} incidents={incidents} complaints={complaints} improvements={improvements} audits={audits} auditReports={auditReports} governanceReviews={governanceReviews} documents={documents} workers={workers} />}
-      {active === 'Schedules' && <SchedulesWorkspace clients={clients} workers={workers} shifts={shifts} setShifts={setShifts} />}
+      {active === 'Schedules' && <SchedulesWorkspace clients={clients} workers={workers} shifts={shifts} setShifts={setShifts} invoices={invoices} setInvoices={setInvoices} pricingItems={pricingItems} />}
       {active === 'Settings' && <div className="mobile-settings"><MobileMore setActive={setActive} />{settings}</div>}
     </main>
     <button className="mobile-fab" onClick={() => setFabOpen(v => !v)}>+</button>
@@ -2366,13 +2366,14 @@ function NdisPricingManager({ items, onChange, onSave }) {
 }
 
 
-function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts = () => {} }) {
+function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts = () => {}, invoices = [], setInvoices = () => {}, pricingItems = DEFAULT_PRICING_ITEMS }) {
   const [draft, setDraft] = useState(emptyShift());
   const [editingId, setEditingId] = useState(null);
-  const [view, setView] = useState('Week');
+  const [view, setView] = useState('Calendar');
   const [filterWorker, setFilterWorker] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
+  const [detailId, setDetailId] = useState(null);
   const activeWorkers = workers.filter(w => !w.archived);
   const activeClients = clients.filter(c => !c.archived);
   const findWorker = (id) => workers.find(w => w.id === id);
@@ -2390,17 +2391,19 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
   });
   const getShiftTone = (status = 'Scheduled') => {
     if (status === 'Completed') return 'current';
+    if (status === 'Awaiting Notes') return 'due';
     if (status === 'In Progress') return 'due';
     if (status === 'Missed' || status === 'Cancelled') return 'overdue';
     return '';
   };
-  const hoursBetween = (start, end) => {
-    if (!start || !end) return 0;
-    const [sh, sm] = start.split(':').map(Number);
-    const [eh, em] = end.split(':').map(Number);
-    const minutes = ((eh * 60 + em) - (sh * 60 + sm));
-    return Math.max(0, minutes / 60);
+  const scheduledHours = (shift) => hoursBetween(shift.startTime, shift.endTime);
+  const actualHours = (shift) => {
+    if (!shift.startedAt || !shift.endedAt) return 0;
+    const ms = new Date(shift.endedAt) - new Date(shift.startedAt);
+    return Math.max(0, ms / 3600000);
   };
+  const timeOnly = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+  const dateTime = (iso) => iso ? new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—';
   const saveShift = () => {
     if (!draft.workerId) return alert('Please choose a support worker. Add the employee in Compliance > Employees first, then assign them here.');
     if (!draft.participantId) return alert('Please choose a participant.');
@@ -2415,72 +2418,133 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
       status: draft.status || 'Scheduled'
     };
     if (editingId) setShifts(prev => prev.map(shift => shift.id === editingId ? { ...clean, id: editingId } : shift));
-    else setShifts(prev => [{ ...clean, id: clean.id || makeId('shift'), createdAt: new Date().toISOString() }, ...prev]);
+    else setShifts(prev => [{ ...clean, id: clean.id || makeId('shift'), createdAt: new Date().toISOString(), reviewStatus: 'Not reviewed', payrollStatus: 'Not generated', invoiceStatus: 'Not generated' }, ...prev]);
     setDraft(emptyShift());
     setEditingId(null);
   };
   const editShift = (shift) => { setDraft({ ...emptyShift(), ...shift }); setEditingId(shift.id); window.scrollTo(0, 0); };
-  const duplicateShift = (shift) => { setDraft({ ...emptyShift(), ...shift, id: makeId('shift'), status: 'Scheduled', startedAt: '', endedAt: '', notes: '', date: shift.date || todayISO() }); setEditingId(null); window.scrollTo(0, 0); };
+  const duplicateShift = (shift) => { setDraft({ ...emptyShift(), ...shift, id: makeId('shift'), status: 'Scheduled', startedAt: '', endedAt: '', notes: '', date: shift.date || todayISO(), reviewStatus: 'Not reviewed', payrollStatus: 'Not generated', invoiceStatus: 'Not generated' }); setEditingId(null); window.scrollTo(0, 0); };
   const deleteShift = (id) => { if (confirm('Delete this assigned shift?')) setShifts(prev => prev.filter(shift => shift.id !== id)); };
+  const updateShift = (id, patch) => setShifts(prev => prev.map(shift => shift.id === id ? { ...shift, ...patch, updatedAt: new Date().toISOString() } : shift));
+  const reviewShift = (shift) => updateShift(shift.id, { reviewStatus: 'Reviewed', reviewedAt: new Date().toISOString() });
+  const generateTimesheet = (shift) => updateShift(shift.id, { payrollStatus: 'Timesheet generated', timesheetGeneratedAt: new Date().toISOString() });
+  const markInvoiceReady = (shift) => {
+    const client = findClient(shift.participantId);
+    if (!client) return updateShift(shift.id, { invoiceStatus: 'Ready for invoice', invoiceReadyAt: new Date().toISOString() });
+    const existingInvoiceId = shift.invoiceId;
+    if (existingInvoiceId && invoices.some(inv => inv.id === existingInvoiceId)) return updateShift(shift.id, { invoiceStatus: 'Invoice generated', invoiceReadyAt: new Date().toISOString() });
+    const item = pricingItems.find(p => String(shift.supportType || '').toLowerCase().includes(String(p.label || '').toLowerCase())) || pricingItems[0] || { itemNumber: '', label: shift.supportType || 'Support worker shift', unitType: 'hours', rate: 0 };
+    const qty = Number((actualHours(shift) || scheduledHours(shift) || 0).toFixed(2));
+    const rate = Number(item.rate || 0);
+    const stamp = todayISO().replace(/-/g, '');
+    const next = invoices.filter(i => String(i.invoiceNumber).startsWith(`INV-${stamp}-`)).length + 1;
+    const invoice = {
+      id: makeId('invoice'),
+      invoiceNumber: `INV-${stamp}-${String(next).padStart(3, '0')}`,
+      issueDate: todayISO(),
+      dueDate: addDaysISO(7),
+      clientId: client.id,
+      clientName: client.name,
+      clientEmail: client.email,
+      clientPhone: client.phone,
+      clientAddress: client.address,
+      ndisNumber: client.ndisNumber,
+      notes: `Generated from completed shift ${fmt(shift.date)} ${shift.startTime}-${shift.endTime}. Worker notes: ${shift.notes || 'No notes.'}`,
+      lines: [{ id: makeId('line'), itemCode: item.itemNumber || '', itemLabel: item.label || shift.supportType || 'Support shift', serviceDate: shift.date, unitType: item.unitType || 'hours', quantity: qty || 1, rate, notes: shift.supportType || '', lineTotal: (qty || 1) * rate }],
+      total: (qty || 1) * rate,
+      status: 'Pending',
+      statusHistory: [{ status: 'Pending', note: 'Generated from completed reviewed shift', at: new Date().toISOString() }],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setInvoices(prev => [invoice, ...prev]);
+    updateShift(shift.id, { invoiceStatus: 'Invoice generated', invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, invoiceReadyAt: new Date().toISOString() });
+  };
   const filteredShifts = [...shifts]
     .filter(shift => filterWorker === 'all' || shift.workerId === filterWorker)
     .filter(shift => filterStatus === 'all' || (shift.status || 'Scheduled') === filterStatus)
     .filter(shift => {
-      const haystack = [findWorker(shift.workerId)?.name, findWorker(shift.workerId)?.email, findClient(shift.participantId)?.name, shift.location, shift.supportType, shift.adminNotes].join(' ').toLowerCase();
+      const haystack = [findWorker(shift.workerId)?.name, findWorker(shift.workerId)?.email, findClient(shift.participantId)?.name, shift.location, shift.supportType, shift.adminNotes, shift.notes].join(' ').toLowerCase();
       return !search || haystack.includes(search.toLowerCase());
     })
     .sort((a,b) => shiftDateTime(a).localeCompare(shiftDateTime(b)));
   const weekShifts = filteredShifts.filter(shift => weekDays.includes(shift.date));
   const todayShifts = shifts.filter(shift => shift.date === todayISO());
   const liveShifts = shifts.filter(shift => shift.status === 'In Progress');
-  const unassignedWorkers = activeWorkers.filter(worker => !shifts.some(shift => shift.workerId === worker.id && shift.date >= todayISO()));
-  const coverageHours = filteredShifts.reduce((sum, shift) => sum + hoursBetween(shift.startTime, shift.endTime), 0);
-  const statusList = ['Scheduled','In Progress','Completed','Cancelled','Missed'];
+  const completedShifts = filteredShifts.filter(shift => shift.status === 'Completed');
+  const reviewQueue = completedShifts.filter(shift => (shift.notes || '').trim() && shift.reviewStatus !== 'Reviewed');
+  const payrollQueue = completedShifts.filter(shift => shift.reviewStatus === 'Reviewed' && shift.payrollStatus !== 'Timesheet generated');
+  const invoiceQueue = completedShifts.filter(shift => shift.reviewStatus === 'Reviewed' && shift.invoiceStatus !== 'Ready for invoice');
+  const coverageHours = filteredShifts.reduce((sum, shift) => sum + scheduledHours(shift), 0);
+  const actualCompletedHours = completedShifts.reduce((sum, shift) => sum + (actualHours(shift) || scheduledHours(shift)), 0);
+  const statusList = ['Scheduled','In Progress','Awaiting Notes','Completed','Cancelled','Missed'];
+  const workerTimesheets = activeWorkers.map(worker => {
+    const rows = completedShifts.filter(s => s.workerId === worker.id && s.reviewStatus === 'Reviewed');
+    return { worker, rows, hours: rows.reduce((sum, s) => sum + (actualHours(s) || scheduledHours(s)), 0) };
+  }).filter(x => x.rows.length);
+  const viewRows = view === 'In Progress' ? filteredShifts.filter(s => s.status === 'In Progress') : view === 'Completed' ? completedShifts : view === 'Review' ? reviewQueue : view === 'Timesheets' ? completedShifts.filter(s => s.reviewStatus === 'Reviewed') : filteredShifts;
 
   return <>
-    <Card title="Smart Scheduling" action={`${filteredShifts.length} visible · ${coverageHours.toFixed(1)} hrs`}>
-      <p>Plan client support, assign employees, monitor live clock-ins and keep worker instructions attached to each shift. Employee portal users only see shifts assigned to their employee email/profile.</p>
+    <Card title="Scheduling Command Centre" action={`${filteredShifts.length} visible · ${coverageHours.toFixed(1)} scheduled hrs`}>
+      <p>Manage the full shift lifecycle: assign a client shift, let the worker clock in/out, collect shift notes, review evidence, then generate timesheet and invoice/payroll status.</p>
       <div className="schedule-command-centre">
         <InsightCard label="Today" value={todayShifts.length} sub="Assigned shifts" />
         <InsightCard label="Live" value={liveShifts.length} sub="Clocked in now" />
-        <InsightCard label="Workers" value={activeWorkers.length} sub={`${unassignedWorkers.length} without upcoming shifts`} />
-        <InsightCard label="Participants" value={activeClients.length} sub="Available clients" />
+        <InsightCard label="Review" value={reviewQueue.length} sub="Completed with notes" />
+        <InsightCard label="Hours" value={actualCompletedHours.toFixed(1)} sub="Completed actual hours" />
       </div>
       <div className="schedule-toolbar">
-        <div className="segmented-control">{['Week','List'].map(tab => <button key={tab} className={view === tab ? 'active' : ''} onClick={() => setView(tab)}>{tab}</button>)}</div>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search worker, client, location…" />
-        <select value={filterWorker} onChange={e => setFilterWorker(e.target.value)}><option value="all">All workers</option>{activeWorkers.map(w => <option key={w.id} value={w.id}>{w.name || w.email}</option>)}</select>
+        <div className="segmented-control">{['Calendar','Assigned','In Progress','Completed','Review','Timesheets'].map(tab => <button key={tab} className={view === tab ? 'active' : ''} onClick={() => setView(tab)}>{tab}</button>)}</div>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search worker, client, notes, location…" />
+        <select value={filterWorker} onChange={e => setFilterWorker(e.target.value)}><option value="all">All workers</option>{activeWorkers.map(w => <option key={w.id} value={w.id}>{w.name || w.email || w.employeeUsername}</option>)}</select>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">All statuses</option>{statusList.map(x => <option key={x}>{x}</option>)}</select>
       </div>
     </Card>
 
-    <Card title={editingId ? 'Edit Client Shift' : 'Add Client Shift'} action={editingId ? 'Editing assignment' : 'New assignment'}>
+    <Card title={editingId ? 'Edit Client Shift' : 'Assign Client Shift'} action={editingId ? 'Editing assignment' : 'New assignment'}>
       {(!activeWorkers.length || !activeClients.length) && <div className="auth-message">Add at least one employee in Compliance &gt; Employees and one participant before creating assigned shifts.</div>}
       <div className="schedule-form-grid">
-        <label><span>Employee / Support Worker</span><select value={draft.workerId} onChange={e => updateDraft('workerId', e.target.value)}><option value="">Select employee</option>{activeWorkers.map(w => <option key={w.id} value={w.id}>{w.name || w.email} {w.email ? `· ${w.email}` : ''}</option>)}</select></label>
+        <label><span>Employee / Support Worker</span><select value={draft.workerId} onChange={e => updateDraft('workerId', e.target.value)}><option value="">Select employee</option>{activeWorkers.map(w => <option key={w.id} value={w.id}>{w.name || w.email || w.employeeUsername}</option>)}</select></label>
         <label><span>Client / Participant</span><select value={draft.participantId} onChange={e => updateDraft('participantId', e.target.value)}><option value="">Select client</option>{activeClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <Field label="Date" type="date" value={draft.date} onChange={e => updateDraft('date', e.target.value)} />
         <Field label="Start" type="time" value={draft.startTime} onChange={e => updateDraft('startTime', e.target.value)} />
         <Field label="Finish" type="time" value={draft.endTime} onChange={e => updateDraft('endTime', e.target.value)} />
         <label><span>Status</span><select value={draft.status} onChange={e => updateDraft('status', e.target.value)}>{statusList.map(x => <option key={x}>{x}</option>)}</select></label>
-        <Field label="Location" value={draft.location} onChange={e => updateDraft('location', e.target.value)} placeholder="Participant home, community access, telehealth…" />
-        <Field label="Support Type" value={draft.supportType} onChange={e => updateDraft('supportType', e.target.value)} placeholder="Personal care, community access…" />
+        <Field label="Address / Location" value={draft.location} onChange={e => updateDraft('location', e.target.value)} placeholder="Participant home address or community location…" />
+        <Field label="Service Type" value={draft.supportType} onChange={e => updateDraft('supportType', e.target.value)} placeholder="Personal care, community access, domestic assistance…" />
       </div>
       <Field label="Worker Instructions / Admin Notes" multiline value={draft.adminNotes || ''} onChange={e => updateDraft('adminNotes', e.target.value)} placeholder="Key risks, goals, transport notes, medication prompts, handover details…" />
       <div className="actions"><button className="primary" onClick={saveShift}>{editingId ? 'Update Shift' : 'Assign Employee to Shift'}</button>{editingId && <button onClick={() => { setEditingId(null); setDraft(emptyShift()); }}>Cancel Edit</button>}</div>
     </Card>
 
-    {view === 'Week' && <Card title="This Week Coverage"><div className="schedule-week-board">{weekDays.map(day => {
+    {view === 'Calendar' && <Card title="This Week Coverage"><div className="schedule-week-board">{weekDays.map(day => {
       const dayRows = weekShifts.filter(shift => shift.date === day);
-      return <section className="schedule-day-column" key={day}><div className="schedule-day-head"><b>{new Date(`${day}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}</b><small>{fmt(day)}</small></div>{dayRows.length ? dayRows.map(shift => <button className="schedule-mini-card" key={shift.id} onClick={() => editShift(shift)}><span>{shift.startTime}–{shift.endTime}</span><b>{findClient(shift.participantId)?.name || shift.participantName || 'Client'}</b><small>{findWorker(shift.workerId)?.name || shift.workerName || 'Worker'} · {shift.supportType}</small><em className={`traffic-pill ${getShiftTone(shift.status)}`}>{shift.status || 'Scheduled'}</em></button>) : <small className="muted">No shifts</small>}</section>;
+      return <section className="schedule-day-column" key={day}><div className="schedule-day-head"><b>{new Date(`${day}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}</b><small>{fmt(day)}</small></div>{dayRows.length ? dayRows.map(shift => <button className="schedule-mini-card" key={shift.id} onClick={() => setDetailId(shift.id)}><span>{shift.startTime}–{shift.endTime}</span><b>{findClient(shift.participantId)?.name || shift.participantName || 'Client'}</b><small>{findWorker(shift.workerId)?.name || shift.workerName || 'Worker'} · {shift.supportType}</small><em className={`traffic-pill ${getShiftTone(shift.status)}`}>{shift.status || 'Scheduled'}</em></button>) : <small className="muted">No shifts</small>}</section>;
     })}</div></Card>}
 
-    <Card title="Assigned Shifts Register"><div className="client-table schedule-register"><div className="client-table-head"><span>Shift</span><span>Employee</span><span>Client</span><span>Live Status</span><span>Actions</span></div><Records rows={filteredShifts} empty="No shifts match this view." render={shift => {
-      const worker = findWorker(shift.workerId);
-      const client = findClient(shift.participantId);
-      const late = (shift.status || 'Scheduled') === 'Scheduled' && `${shift.date || ''}T${shift.startTime || '00:00'}` < nowKey;
-      return <div className="client-table-row" key={shift.id}><div><b>{fmt(shift.date)} · {shift.startTime}–{shift.endTime}</b><small>{shift.location || shift.supportType || 'No location'} · {hoursBetween(shift.startTime, shift.endTime).toFixed(1)} hrs</small></div><div><b>{worker?.name || shift.workerName || 'Unassigned'}</b><small>{worker?.email || shift.workerEmail || 'No employee email'}</small></div><div><b>{client?.name || shift.participantName || 'Participant missing'}</b><small>{shift.adminNotes || 'No admin notes'}</small></div><div><span className={`traffic-pill ${late ? 'overdue' : getShiftTone(shift.status)}`}>{late ? 'Needs review' : shift.status || 'Scheduled'}</span><small>{shift.startedAt ? `In: ${new Date(shift.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not clocked in'}{shift.endedAt ? ` · Out: ${new Date(shift.endedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</small></div><div className="actions"><button onClick={() => editShift(shift)}>Edit</button><button onClick={() => duplicateShift(shift)}>Duplicate</button><button className="danger" onClick={() => deleteShift(shift.id)}>Delete</button></div></div>;
-    }} /></div></Card>
+    {view === 'Timesheets' && <Card title="Timesheet Summary"><Records rows={workerTimesheets} empty="No reviewed completed shifts are ready for timesheets yet." render={item => <div className="timesheet-card" key={item.worker.id}><div><b>{item.worker.name}</b><small>{item.rows.length} reviewed shift{item.rows.length === 1 ? '' : 's'} · {item.hours.toFixed(2)} hrs</small></div><div className="actions"><button onClick={() => item.rows.forEach(generateTimesheet)}>Generate Timesheet</button><button onClick={() => item.rows.forEach(markInvoiceReady)}>Mark Invoice Ready</button></div></div>} /></Card>}
+
+    <Card title={view === 'Review' ? 'Completed Shifts Review Queue' : view === 'Timesheets' ? 'Reviewed Shift Evidence' : 'Shift Register'}>
+      <div className="client-table schedule-register"><div className="client-table-head"><span>Shift</span><span>Worker</span><span>Client / Service</span><span>Evidence</span><span>Actions</span></div><Records rows={viewRows} empty="No shifts match this view." render={shift => {
+        const worker = findWorker(shift.workerId);
+        const client = findClient(shift.participantId);
+        const late = (shift.status || 'Scheduled') === 'Scheduled' && `${shift.date || ''}T${shift.startTime || '00:00'}` < nowKey;
+        const opened = detailId === shift.id;
+        return <div className="client-table-row schedule-row-expanded" key={shift.id}>
+          <div><b>{fmt(shift.date)} · {shift.startTime}–{shift.endTime}</b><small>{shift.location || client?.address || 'No address'} · {scheduledHours(shift).toFixed(1)} scheduled hrs</small></div>
+          <div><b>{worker?.name || shift.workerName || 'Unassigned'}</b><small>{worker?.employeeUsername ? `@${worker.employeeUsername}` : (worker?.email || shift.workerEmail || 'No login')}</small></div>
+          <div><b>{client?.name || shift.participantName || 'Participant missing'}</b><small>{shift.supportType || 'No service type'} · {shift.adminNotes || 'No admin notes'}</small></div>
+          <div><span className={`traffic-pill ${late ? 'overdue' : getShiftTone(shift.status)}`}>{late ? 'Needs review' : shift.status || 'Scheduled'}</span><small>In {timeOnly(shift.startedAt)} · Out {timeOnly(shift.endedAt)} · Actual {(actualHours(shift) || 0).toFixed(2)} hrs</small></div>
+          <div className="actions"><button onClick={() => setDetailId(opened ? null : shift.id)}>{opened ? 'Hide' : 'Details'}</button><button onClick={() => editShift(shift)}>Edit</button><button onClick={() => duplicateShift(shift)}>Duplicate</button><button className="danger" onClick={() => deleteShift(shift.id)}>Delete</button></div>
+          {opened && <div className="shift-detail-drawer">
+            <div><small>Clock-in</small><b>{dateTime(shift.startedAt)}</b></div><div><small>Clock-out</small><b>{dateTime(shift.endedAt)}</b></div><div><small>Actual duration</small><b>{(actualHours(shift) || 0).toFixed(2)} hrs</b></div><div><small>Review status</small><b>{shift.reviewStatus || 'Not reviewed'}</b></div>
+            <section><small>Worker shift notes</small><p>{shift.notes || 'No worker notes submitted yet.'}</p></section>
+            <section><small>Admin instructions</small><p>{shift.adminNotes || 'No admin instructions entered.'}</p></section>
+            <div className="actions"><button disabled={shift.status !== 'Completed'} onClick={() => reviewShift(shift)}>Mark Reviewed</button><button disabled={shift.reviewStatus !== 'Reviewed'} onClick={() => generateTimesheet(shift)}>Generate Timesheet</button><button disabled={shift.reviewStatus !== 'Reviewed'} onClick={() => markInvoiceReady(shift)}>Mark Invoice Ready</button></div>
+          </div>}
+        </div>;
+      }} /></div>
+    </Card>
   </>;
 }
 
@@ -2506,7 +2570,7 @@ function WorkerPortal({ user, employeeSession, business, worker, workers = [], c
     }
   };
   const startShift = (shift) => patchShift(shift.id, { status: 'In Progress', startedAt: shift.startedAt || new Date().toISOString() });
-  const endShift = (shift) => patchShift(shift.id, { status: 'Completed', endedAt: new Date().toISOString() });
+  const endShift = (shift) => patchShift(shift.id, { status: 'Awaiting Notes', endedAt: new Date().toISOString() });
   const inProgress = workerShifts.filter(s => s.status === 'In Progress').length;
   const completed = workerShifts.filter(s => s.status === 'Completed').length;
 
@@ -2529,19 +2593,28 @@ function WorkerPortal({ user, employeeSession, business, worker, workers = [], c
       {matchedWorker && workerShifts.length === 0 && <div className="worker-notice"><b>No assigned shifts yet</b><span>Your employee profile is active, but no client shifts have been assigned to you yet.</span></div>}
       <nav className="worker-tabs">{['Today','All Shifts','Notes'].map(tab => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}>{tab}</button>)}</nav>
       {portalMessage && <div className="worker-notice"><b>Sync notice</b><span>{portalMessage}</span></div>}
-      <div className="worker-shift-list"><Records rows={visible} empty={active === 'Notes' ? 'No saved shift notes yet.' : 'No assigned shifts found.'} render={shift => <WorkerShiftCard key={shift.id} shift={shift} client={findClient(shift.participantId)} onStart={() => startShift(shift)} onEnd={() => endShift(shift)} onNotes={notes => patchShift(shift.id, { notes })} />} /></div>
+      <div className="worker-shift-list"><Records rows={visible} empty={active === 'Notes' ? 'No saved shift notes yet.' : 'No assigned shifts found.'} render={shift => <WorkerShiftCard key={shift.id} shift={shift} client={findClient(shift.participantId)} onStart={() => startShift(shift)} onEnd={() => endShift(shift)} onNotes={notes => patchShift(shift.id, { notes, status: shift.endedAt || shift.status === 'Awaiting Notes' ? 'Completed' : shift.status || 'Scheduled' })} />} /></div>
     </main>
   </div>;
 }
 
 function WorkerShiftCard({ shift, client, onStart, onEnd, onNotes }) {
   const [notes, setNotes] = useState(shift.notes || '');
-  useEffect(() => setNotes(shift.notes || ''), [shift.id, shift.notes]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => { setNotes(shift.notes || ''); setSaved(false); }, [shift.id, shift.notes]);
   const status = shift.status || 'Scheduled';
   const clientName = client?.name || shift.participantName || 'Assigned participant';
   const address = shift.location || client?.address || 'Address not entered';
   const serviceType = shift.supportType || 'Support shift';
   const duration = shift.startTime && shift.endTime ? `${hoursBetween(shift.startTime, shift.endTime).toFixed(1)} hrs` : 'Duration pending';
+  const handleSaveNotes = async () => {
+    setSaving(true);
+    await onNotes(notes);
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2400);
+  };
   return <article className="worker-shift-card">
     <div className="worker-shift-head">
       <div><small>Client</small><h3>{clientName}</h3></div>
@@ -2553,9 +2626,9 @@ function WorkerShiftCard({ shift, client, onStart, onEnd, onNotes }) {
       <div className="worker-detail-item"><small>Service Type</small><b>{serviceType}</b><span>{shift.adminNotes ? 'See admin notes below' : 'No extra instructions entered'}</span></div>
     </div>
     {shift.adminNotes && <div className="worker-admin-note"><b>Admin notes</b><p>{shift.adminNotes}</p></div>}
-    <div className="worker-actions"><button className="primary" disabled={status === 'In Progress' || status === 'Completed'} onClick={onStart}>Sign into shift</button><button disabled={status !== 'In Progress'} onClick={onEnd}>Sign out of shift</button></div>
+    <div className="worker-actions"><button className="primary" disabled={status === 'In Progress' || status === 'Awaiting Notes' || status === 'Completed'} onClick={onStart}>Sign into shift</button><button disabled={status !== 'In Progress'} onClick={onEnd}>Sign out of shift</button></div>
     <label className="worker-note-field"><span>Shift Notes</span><textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Enter progress notes, observations, concerns or handover notes." /></label>
-    <div className="worker-card-footer"><button onClick={() => onNotes(notes)}>Save Notes</button><small>{shift.startedAt ? `Started: ${new Date(shift.startedAt).toLocaleString()}` : 'Not started'} {shift.endedAt ? ` · Ended: ${new Date(shift.endedAt).toLocaleString()}` : ''}</small></div>
+    <div className="worker-card-footer"><button onClick={handleSaveNotes} disabled={saving || !notes.trim()}>{saving ? 'Saving…' : status === 'Awaiting Notes' ? 'Submit Notes & Complete Shift' : 'Save Notes'}</button><small>{saved ? 'Notes saved successfully.' : (shift.startedAt ? `Started: ${new Date(shift.startedAt).toLocaleString()}` : 'Not started')} {shift.endedAt && !saved ? ` · Ended: ${new Date(shift.endedAt).toLocaleString()}` : ''}</small></div>
   </article>;
 }
 
