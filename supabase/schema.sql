@@ -132,3 +132,138 @@ create index if not exists invoices_user_idx on public.invoices(user_id);
 create index if not exists transactions_user_idx on public.transactions(user_id);
 create index if not exists invoice_lines_invoice_idx on public.invoice_lines(invoice_id);
 create index if not exists app_snapshots_user_idx on public.app_snapshots(user_id);
+
+-- Employee portal username/password RPCs.
+-- Run this section in Supabase SQL Editor after upgrading to v16.4.
+-- Admin users still use Supabase Auth. Employees use the app's employee username/password and can only load/update their own shifts through these functions.
+
+create or replace function public.employee_portal_login(p_username text, p_password_hash text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_username text := lower(trim(coalesce(p_username, '')));
+  v_snapshot_id text;
+  v_payload jsonb;
+  v_worker jsonb;
+begin
+  if v_username = '' or coalesce(p_password_hash, '') = '' then
+    return jsonb_build_object('ok', false, 'message', 'Enter your employee username and password.');
+  end if;
+
+  select s.id, s.payload, w.worker
+    into v_snapshot_id, v_payload, v_worker
+  from public.app_snapshots s
+  cross join lateral jsonb_array_elements(coalesce(s.payload->'workers', '[]'::jsonb)) as w(worker)
+  where lower(coalesce(w.worker->>'employeeUsername', w.worker->>'username', '')) = v_username
+  limit 1;
+
+  if v_worker is null then
+    return jsonb_build_object('ok', false, 'message', 'Employee username was not found.');
+  end if;
+
+  if coalesce((v_worker->>'loginEnabled')::boolean, true) is not true then
+    return jsonb_build_object('ok', false, 'message', 'This employee login is disabled.');
+  end if;
+
+  if coalesce(v_worker->>'employeePasswordHash', v_worker->>'passwordHash', '') <> p_password_hash then
+    return jsonb_build_object('ok', false, 'message', 'Password is incorrect.');
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'worker_id', v_worker->>'id',
+    'snapshot_id', v_snapshot_id,
+    'payload', v_payload
+  );
+end;
+$$;
+
+create or replace function public.employee_portal_update_shift(
+  p_username text,
+  p_password_hash text,
+  p_worker_id text,
+  p_shift_id text,
+  p_patch jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_username text := lower(trim(coalesce(p_username, '')));
+  v_snapshot_id text;
+  v_payload jsonb;
+  v_worker jsonb;
+  v_shift jsonb;
+  v_shifts jsonb;
+  v_safe_patch jsonb;
+begin
+  if v_username = '' or coalesce(p_password_hash, '') = '' then
+    return jsonb_build_object('ok', false, 'message', 'Employee session is invalid.');
+  end if;
+
+  select s.id, s.payload, w.worker
+    into v_snapshot_id, v_payload, v_worker
+  from public.app_snapshots s
+  cross join lateral jsonb_array_elements(coalesce(s.payload->'workers', '[]'::jsonb)) as w(worker)
+  where lower(coalesce(w.worker->>'employeeUsername', w.worker->>'username', '')) = v_username
+  limit 1;
+
+  if v_worker is null then
+    return jsonb_build_object('ok', false, 'message', 'Employee username was not found.');
+  end if;
+
+  if coalesce((v_worker->>'loginEnabled')::boolean, true) is not true then
+    return jsonb_build_object('ok', false, 'message', 'This employee login is disabled.');
+  end if;
+
+  if coalesce(v_worker->>'employeePasswordHash', v_worker->>'passwordHash', '') <> p_password_hash then
+    return jsonb_build_object('ok', false, 'message', 'Employee session failed password check.');
+  end if;
+
+  if coalesce(v_worker->>'id', '') <> coalesce(p_worker_id, '') then
+    return jsonb_build_object('ok', false, 'message', 'Employee session does not match this worker.');
+  end if;
+
+  select sh.shift into v_shift
+  from jsonb_array_elements(coalesce(v_payload->'shifts', '[]'::jsonb)) as sh(shift)
+  where sh.shift->>'id' = p_shift_id
+  limit 1;
+
+  if v_shift is null then
+    return jsonb_build_object('ok', false, 'message', 'Shift was not found.');
+  end if;
+
+  if coalesce(v_shift->>'workerId', '') <> p_worker_id then
+    return jsonb_build_object('ok', false, 'message', 'This shift is not assigned to you.');
+  end if;
+
+  -- Only allow employee-safe shift fields to be changed from the portal.
+  v_safe_patch := jsonb_strip_nulls(jsonb_build_object(
+    'status', p_patch->>'status',
+    'startedAt', p_patch->>'startedAt',
+    'endedAt', p_patch->>'endedAt',
+    'notes', p_patch->>'notes',
+    'updatedAt', coalesce(p_patch->>'updatedAt', now()::text)
+  ));
+
+  select jsonb_agg(case when sh.shift->>'id' = p_shift_id then sh.shift || v_safe_patch else sh.shift end)
+    into v_shifts
+  from jsonb_array_elements(coalesce(v_payload->'shifts', '[]'::jsonb)) as sh(shift);
+
+  v_payload := jsonb_set(v_payload, '{shifts}', coalesce(v_shifts, '[]'::jsonb), true);
+
+  update public.app_snapshots
+  set payload = v_payload, updated_at = now()
+  where id = v_snapshot_id;
+
+  return jsonb_build_object('ok', true, 'payload', v_payload);
+end;
+$$;
+
+grant execute on function public.employee_portal_login(text, text) to anon, authenticated;
+grant execute on function public.employee_portal_update_shift(text, text, text, text, jsonb) to anon, authenticated;

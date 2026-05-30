@@ -189,6 +189,14 @@ const addDaysISO = (days) => { const d = new Date(); d.setDate(d.getDate() + day
 const makeId = (p) => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const money = (v) => `$${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmt = (d) => d ? new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '-';
+const hoursBetween = (start, end) => {
+  if (!start || !end) return 0;
+  const [sh, sm] = String(start).split(':').map(Number);
+  const [eh, em] = String(end).split(':').map(Number);
+  if ([sh, sm, eh, em].some(n => Number.isNaN(n))) return 0;
+  const minutes = ((eh * 60 + em) - (sh * 60 + sm));
+  return Math.max(0, minutes / 60);
+};
 const getFirstName = (user) => {
   const source = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'there';
   const first = String(source).trim().split(/[\s._-]+/).filter(Boolean)[0] || 'there';
@@ -274,10 +282,29 @@ const employeePasswordHash = (value = '') => {
 };
 const normaliseUsername = (value = '') => String(value || '').trim().toLowerCase();
 const employeeLoginEnabled = (worker = {}) => worker.loginEnabled !== false && Boolean(normaliseUsername(worker.employeeUsername || worker.username));
-const findEmployeeLogin = (username, password) => {
+const findEmployeeLogin = async (username, password) => {
   const u = normaliseUsername(username);
   const hash = employeePasswordHash(password);
   if (!u || !password) return { ok: false, message: 'Enter your username and password.' };
+
+  // Production path: load the employee profile and assigned shifts directly from Supabase.
+  // This lets workers sign in from their own phone/device without the admin signing in first.
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.rpc('employee_portal_login', { p_username: u, p_password_hash: hash });
+      if (!error && data?.ok) {
+        const payload = normalisePayload(data.payload || {});
+        return { ok: true, session: { workerId: data.worker_id, username: u, passwordHash: hash, cloud: true, signedInAt: new Date().toISOString() }, payload };
+      }
+      if (!error && data && data.ok === false) return { ok: false, message: data.message || 'Employee sign in failed.' };
+      // If the RPC is not installed yet, fall back to this device and tell admin what to run.
+      if (error && !String(error.message || '').toLowerCase().includes('employee_portal_login')) {
+        return { ok: false, message: error.message };
+      }
+    } catch {}
+  }
+
+  // Local fallback for preview/demo only.
   for (let i = 0; i < window.localStorage.length; i += 1) {
     const key = window.localStorage.key(i);
     if (!key || !key.startsWith(STORAGE_KEY)) continue;
@@ -286,10 +313,32 @@ const findEmployeeLogin = (username, password) => {
       const worker = payload.workers.find(w => employeeLoginEnabled(w) && normaliseUsername(w.employeeUsername || w.username) === u);
       if (!worker) continue;
       if ((worker.employeePasswordHash || worker.passwordHash) !== hash) return { ok: false, message: 'Password is incorrect.' };
-      return { ok: true, session: { workerId: worker.id, ownerStorageKey: key, username: u, signedInAt: new Date().toISOString() }, payload };
+      return { ok: true, session: { workerId: worker.id, ownerStorageKey: key, username: u, passwordHash: hash, signedInAt: new Date().toISOString() }, payload };
     } catch {}
   }
-  return { ok: false, message: 'Employee username was not found on this device.' };
+  return { ok: false, message: supabase ? 'Employee login service is not installed yet. Ask admin to run the updated v16.4 Supabase SQL, then sync the admin workspace to cloud.' : 'Employee username was not found on this device.' };
+};
+
+const refreshEmployeePortal = async (session) => {
+  if (!session?.cloud || !supabase) return { ok: false, message: 'Cloud employee session unavailable.' };
+  const { data, error } = await supabase.rpc('employee_portal_login', { p_username: session.username, p_password_hash: session.passwordHash });
+  if (error) return { ok: false, message: error.message };
+  if (!data?.ok) return { ok: false, message: data?.message || 'Employee session expired.' };
+  return { ok: true, payload: normalisePayload(data.payload || {}), workerId: data.worker_id };
+};
+
+const updateEmployeeShiftCloud = async (session, shiftId, patch) => {
+  if (!session?.cloud || !supabase) return { ok: false, message: 'Cloud employee session unavailable.' };
+  const { data, error } = await supabase.rpc('employee_portal_update_shift', {
+    p_username: session.username,
+    p_password_hash: session.passwordHash,
+    p_worker_id: session.workerId,
+    p_shift_id: shiftId,
+    p_patch: patch || {},
+  });
+  if (error) return { ok: false, message: error.message };
+  if (!data?.ok) return { ok: false, message: data?.message || 'Shift update failed.' };
+  return { ok: true, payload: normalisePayload(data.payload || {}) };
 };
 
 export default function App() {
@@ -339,17 +388,39 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!employeeSession?.ownerStorageKey || user?.id) return;
-    try {
-      const raw = localStorage.getItem(employeeSession.ownerStorageKey);
-      if (raw) { applyPayload(JSON.parse(raw)); setStorageLoaded(true); setCloudChecked(true); }
-      else { localStorage.removeItem(EMPLOYEE_SESSION_KEY); setEmployeeSession(null); }
-    } catch {
-      localStorage.removeItem(EMPLOYEE_SESSION_KEY); setEmployeeSession(null);
-    } finally {
-      setAuthLoading(false);
+    if (!employeeSession?.workerId || user?.id) return;
+    let cancelled = false;
+    async function loadEmployeeSession() {
+      try {
+        if (employeeSession.cloud) {
+          const result = await refreshEmployeePortal(employeeSession);
+          if (cancelled) return;
+          if (result.ok) {
+            applyPayload(result.payload);
+            setEmployeeSession(prev => ({ ...prev, workerId: result.workerId || prev.workerId }));
+            setStorageLoaded(true);
+            setCloudChecked(true);
+            return;
+          }
+          localStorage.removeItem(EMPLOYEE_SESSION_KEY);
+          setEmployeeSession(null);
+          return;
+        }
+        if (employeeSession.ownerStorageKey) {
+          const raw = localStorage.getItem(employeeSession.ownerStorageKey);
+          if (raw) { applyPayload(JSON.parse(raw)); setStorageLoaded(true); setCloudChecked(true); }
+          else { localStorage.removeItem(EMPLOYEE_SESSION_KEY); setEmployeeSession(null); }
+        }
+      } catch {
+        localStorage.removeItem(EMPLOYEE_SESSION_KEY);
+        setEmployeeSession(null);
+      } finally {
+        if (!cancelled) setAuthLoading(false);
+      }
     }
-  }, [employeeSession?.ownerStorageKey, user?.id]);
+    loadEmployeeSession();
+    return () => { cancelled = true; };
+  }, [employeeSession?.workerId, employeeSession?.cloud, employeeSession?.ownerStorageKey, user?.id]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -421,12 +492,25 @@ export default function App() {
     localStorage.setItem(employeeSession?.ownerStorageKey || storageKeyFor(user), snapshot);
   }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers, shifts, risks, incidents, complaints, improvements, audits, auditReports, governanceReviews, documents]);
 
-  // Cloud sync is manual only. Local changes are still saved immediately to this device.
+  // Admin changes are saved locally immediately and synced to Supabase automatically.
+  // This is what lets employee phones load their own shifts without the admin device being present.
   useEffect(() => {
     if (!storageLoaded || !user?.id) return;
     setCloudChecked(true);
-    setCloudLoading(false);
-  }, [storageLoaded, user?.id]);
+    if (cloudLoading) return;
+    const data = payloadWithFreshMeta();
+    const snapshot = serialisePayload(data);
+    if (snapshot === lastCloudSnapshotRef.current) return;
+    clearTimeout(autoSyncTimer.current);
+    autoSyncTimer.current = setTimeout(async () => {
+      const latest = payloadWithFreshMeta();
+      const latestSnapshot = serialisePayload(latest);
+      if (latestSnapshot === lastCloudSnapshotRef.current) return;
+      const r = await syncSnapshot(latest, user);
+      if (r.ok) lastCloudSnapshotRef.current = latestSnapshot;
+    }, 900);
+    return () => clearTimeout(autoSyncTimer.current);
+  }, [storageLoaded, user?.id, business, clients, invoices, transactions, workers, shifts, risks, incidents, complaints, improvements, audits, auditReports, governanceReviews, documents]);
 
   const loadCloudData = async ({ silent = false } = {}) => {
     if (!user?.id) return { ok: false, message: 'Please sign in first.' };
@@ -438,7 +522,7 @@ export default function App() {
         lastCloudSnapshotRef.current = serialisePayload(nextPayload);
         lastLocalSnapshotRef.current = '';
         applyPayload(nextPayload);
-        if (!silent) showNotice('Cloud data loaded into this device. Press Sync to Supabase when you want to update the cloud snapshot.');
+        if (!silent) showNotice('Cloud data loaded into this device. Changes now sync automatically to Supabase.');
       } else if (!silent) {
         showNotice(r.message || 'No cloud data found yet.');
       }
@@ -757,7 +841,7 @@ export default function App() {
   if (!user && employeeSession?.workerId) {
     if (!storageLoaded) return <LoadingScreen message="Loading employee portal…" />;
     const currentWorker = workers.find(w => w.id === employeeSession.workerId);
-    return <WorkerPortal employeeSession={employeeSession} business={business} worker={currentWorker} workers={workers} clients={clients} shifts={shifts} setShifts={setShifts} onSignOut={() => { localStorage.removeItem(EMPLOYEE_SESSION_KEY); setEmployeeSession(null); setStorageLoaded(false); }} />;
+    return <WorkerPortal employeeSession={employeeSession} business={business} worker={currentWorker} workers={workers} clients={clients} shifts={shifts} setShifts={setShifts} onCloudPayload={applyPayload} onSignOut={() => { localStorage.removeItem(EMPLOYEE_SESSION_KEY); setEmployeeSession(null); setStorageLoaded(false); }} />;
   }
   if (!user) return <AuthGate onEmployeeLogin={(session, payload) => { localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session)); setEmployeeSession(session); applyPayload(payload); setStorageLoaded(true); setCloudChecked(true); }} />;
 
@@ -779,7 +863,7 @@ export default function App() {
 
   const role = user?.user_metadata?.kajola_role || user?.user_metadata?.role || window.localStorage.getItem('kajola_last_login_role') || 'admin';
   const currentWorker = workers.find(w => String(w.email || '').toLowerCase() === String(user?.email || '').toLowerCase());
-  if (role === 'worker' || role === 'employee') return <WorkerPortal user={user} business={business} worker={currentWorker} workers={workers} clients={clients} shifts={shifts} setShifts={setShifts} onSignOut={async () => { await supabase.auth.signOut(); }} />;
+  if (role === 'worker' || role === 'employee') return <WorkerPortal user={user} business={business} worker={currentWorker} workers={workers} clients={clients} shifts={shifts} setShifts={setShifts} onCloudPayload={applyPayload} onSignOut={async () => { await supabase.auth.signOut(); }} />;
 
   const needsOnboarding = !business.name.trim();
   if (needsOnboarding) return <BusinessOnboarding business={business} onSave={saveBusiness} user={user} onLoadCloud={() => loadCloudData()} cloudLoading={cloudLoading} />;
@@ -794,7 +878,7 @@ export default function App() {
     <aside className="sidebar">
       <div className="brand"><BrandMark /><div><BrandWordmark /><p>Care • Connect • Empower</p></div></div>
       <nav>{TABS.map(t => <button key={t} className={active === t ? 'active' : ''} onClick={() => setActive(t)}><Icon name={t}/><span>{t}</span></button>)}</nav>
-      <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'Manual cloud sync ready' : 'Cloud sync disabled'}</small></div>
+      <div className="status-card"><span className={isSupabaseConfigured ? 'dot on' : 'dot'} /> <b>{isSupabaseConfigured ? 'Supabase Connected' : 'Local Mode'}</b><small>{isSupabaseConfigured ? 'Auto cloud sync ready' : 'Cloud sync disabled'}</small></div>
       <div className="profile-card"><div className="avatar">{(user.email || 'KC').slice(0,2).toUpperCase()}</div><div><b>{user.email}</b><small>Signed in securely</small></div></div>
     </aside>
     <main className="main">
@@ -2400,7 +2484,7 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
   </>;
 }
 
-function WorkerPortal({ user, employeeSession, business, worker, workers = [], clients = [], shifts = [], setShifts = () => {}, onSignOut }) {
+function WorkerPortal({ user, employeeSession, business, worker, workers = [], clients = [], shifts = [], setShifts = () => {}, onCloudPayload = () => {}, onSignOut }) {
   const [active, setActive] = useState('Today');
   const email = String(user?.email || '').toLowerCase();
   const matchedWorker = worker || workers.find(w => employeeSession?.workerId ? w.id === employeeSession.workerId : String(w.email || '').toLowerCase() === email);
@@ -2410,7 +2494,17 @@ function WorkerPortal({ user, employeeSession, business, worker, workers = [], c
   const today = todayISO();
   const visible = active === 'Today' ? workerShifts.filter(s => s.date === today) : active === 'Notes' ? workerShifts.filter(s => String(s.notes || '').trim()) : workerShifts;
   const findClient = (id) => clients.find(c => c.id === id);
-  const patchShift = (id, patch) => setShifts(prev => prev.map(s => s.id === id ? { ...s, ...patch, updatedAt: new Date().toISOString() } : s));
+  const [portalMessage, setPortalMessage] = useState('');
+  const patchShift = async (id, patch) => {
+    const fullPatch = { ...patch, updatedAt: new Date().toISOString() };
+    setPortalMessage('');
+    setShifts(prev => prev.map(s => s.id === id ? { ...s, ...fullPatch } : s));
+    if (employeeSession?.cloud) {
+      const result = await updateEmployeeShiftCloud(employeeSession, id, fullPatch);
+      if (result.ok) onCloudPayload(result.payload);
+      else setPortalMessage(result.message || 'Could not save this shift update to cloud.');
+    }
+  };
   const startShift = (shift) => patchShift(shift.id, { status: 'In Progress', startedAt: shift.startedAt || new Date().toISOString() });
   const endShift = (shift) => patchShift(shift.id, { status: 'Completed', endedAt: new Date().toISOString() });
   const inProgress = workerShifts.filter(s => s.status === 'In Progress').length;
@@ -2434,6 +2528,7 @@ function WorkerPortal({ user, employeeSession, business, worker, workers = [], c
       {!matchedWorker && <div className="worker-notice"><b>Employee Profile Not Found</b><span>Your account is not yet linked to an employee record. Ask an admin to create or enable your employee username under Compliance &gt; Employees before assigning shifts.</span></div>}
       {matchedWorker && workerShifts.length === 0 && <div className="worker-notice"><b>No assigned shifts yet</b><span>Your employee profile is active, but no client shifts have been assigned to you yet.</span></div>}
       <nav className="worker-tabs">{['Today','All Shifts','Notes'].map(tab => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}>{tab}</button>)}</nav>
+      {portalMessage && <div className="worker-notice"><b>Sync notice</b><span>{portalMessage}</span></div>}
       <div className="worker-shift-list"><Records rows={visible} empty={active === 'Notes' ? 'No saved shift notes yet.' : 'No assigned shifts found.'} render={shift => <WorkerShiftCard key={shift.id} shift={shift} client={findClient(shift.participantId)} onStart={() => startShift(shift)} onEnd={() => endShift(shift)} onNotes={notes => patchShift(shift.id, { notes })} />} /></div>
     </main>
   </div>;
@@ -2546,7 +2641,7 @@ function AuthGate({ onEmployeeLogin }) {
     if (loginRole === 'worker') {
       if (!email || !password) { setMessage('Enter your employee username and password.'); return; }
       setBusy(true); setMessage('');
-      const result = findEmployeeLogin(email, password);
+      const result = await findEmployeeLogin(email, password);
       setBusy(false);
       if (!result.ok) setMessage(result.message);
       else { setMessage('Signed in. Loading employee portal…'); onEmployeeLogin?.(result.session, result.payload); }
