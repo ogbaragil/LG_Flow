@@ -2223,42 +2223,118 @@ function NdisPricingManager({ items, onChange, onSave }) {
 function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts = () => {} }) {
   const [draft, setDraft] = useState(emptyShift());
   const [editingId, setEditingId] = useState(null);
+  const [view, setView] = useState('Week');
+  const [filterWorker, setFilterWorker] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [search, setSearch] = useState('');
   const activeWorkers = workers.filter(w => !w.archived);
   const activeClients = clients.filter(c => !c.archived);
   const findWorker = (id) => workers.find(w => w.id === id);
   const findClient = (id) => clients.find(c => c.id === id);
   const updateDraft = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
+  const shiftDateTime = (shift) => `${shift.date || ''}T${shift.startTime || '00:00'}`;
+  const nowKey = new Date().toISOString().slice(0, 16);
+  const weekStart = new Date();
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
+  const weekDays = Array.from({ length: 7 }, (_, idx) => {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + idx);
+    return d.toISOString().slice(0, 10);
+  });
+  const getShiftTone = (status = 'Scheduled') => {
+    if (status === 'Completed') return 'current';
+    if (status === 'In Progress') return 'due';
+    if (status === 'Missed' || status === 'Cancelled') return 'overdue';
+    return '';
+  };
+  const hoursBetween = (start, end) => {
+    if (!start || !end) return 0;
+    const [sh, sm] = start.split(':').map(Number);
+    const [eh, em] = end.split(':').map(Number);
+    const minutes = ((eh * 60 + em) - (sh * 60 + sm));
+    return Math.max(0, minutes / 60);
+  };
   const saveShift = () => {
-    if (!draft.workerId) return alert('Please choose a support worker.');
+    if (!draft.workerId) return alert('Please choose a support worker. Add the employee in Compliance > Employees first, then assign them here.');
     if (!draft.participantId) return alert('Please choose a participant.');
-    const clean = { ...draft, updatedAt: new Date().toISOString(), status: draft.status || 'Scheduled' };
+    const selectedWorker = findWorker(draft.workerId);
+    const selectedClient = findClient(draft.participantId);
+    const clean = {
+      ...draft,
+      workerEmail: selectedWorker?.email || draft.workerEmail || '',
+      workerName: selectedWorker?.name || draft.workerName || '',
+      participantName: selectedClient?.name || draft.participantName || '',
+      updatedAt: new Date().toISOString(),
+      status: draft.status || 'Scheduled'
+    };
     if (editingId) setShifts(prev => prev.map(shift => shift.id === editingId ? { ...clean, id: editingId } : shift));
     else setShifts(prev => [{ ...clean, id: clean.id || makeId('shift'), createdAt: new Date().toISOString() }, ...prev]);
     setDraft(emptyShift());
     setEditingId(null);
   };
   const editShift = (shift) => { setDraft({ ...emptyShift(), ...shift }); setEditingId(shift.id); window.scrollTo(0, 0); };
+  const duplicateShift = (shift) => { setDraft({ ...emptyShift(), ...shift, id: makeId('shift'), status: 'Scheduled', startedAt: '', endedAt: '', notes: '', date: shift.date || todayISO() }); setEditingId(null); window.scrollTo(0, 0); };
   const deleteShift = (id) => { if (confirm('Delete this assigned shift?')) setShifts(prev => prev.filter(shift => shift.id !== id)); };
-  const upcoming = [...shifts].sort((a,b) => `${a.date || ''}${a.startTime || ''}`.localeCompare(`${b.date || ''}${b.startTime || ''}`));
+  const filteredShifts = [...shifts]
+    .filter(shift => filterWorker === 'all' || shift.workerId === filterWorker)
+    .filter(shift => filterStatus === 'all' || (shift.status || 'Scheduled') === filterStatus)
+    .filter(shift => {
+      const haystack = [findWorker(shift.workerId)?.name, findWorker(shift.workerId)?.email, findClient(shift.participantId)?.name, shift.location, shift.supportType, shift.adminNotes].join(' ').toLowerCase();
+      return !search || haystack.includes(search.toLowerCase());
+    })
+    .sort((a,b) => shiftDateTime(a).localeCompare(shiftDateTime(b)));
+  const weekShifts = filteredShifts.filter(shift => weekDays.includes(shift.date));
+  const todayShifts = shifts.filter(shift => shift.date === todayISO());
+  const liveShifts = shifts.filter(shift => shift.status === 'In Progress');
+  const unassignedWorkers = activeWorkers.filter(worker => !shifts.some(shift => shift.workerId === worker.id && shift.date >= todayISO()));
+  const coverageHours = filteredShifts.reduce((sum, shift) => sum + hoursBetween(shift.startTime, shift.endTime), 0);
+  const statusList = ['Scheduled','In Progress','Completed','Cancelled','Missed'];
 
   return <>
-    <Card title={editingId ? 'Edit Assigned Shift' : 'Assign Support Worker Shift'} action={`${shifts.length} shifts`}>
-      <p>Create shifts for carers/support workers. Employee login will show only the worker’s assigned shifts, clock in/out controls and shift-note entry.</p>
-      <div className="grid">
-        <label><span>Support Worker</span><select value={draft.workerId} onChange={e => updateDraft('workerId', e.target.value)}><option value="">Select worker</option>{activeWorkers.map(w => <option key={w.id} value={w.id}>{w.name || w.email}</option>)}</select></label>
-        <label><span>Participant</span><select value={draft.participantId} onChange={e => updateDraft('participantId', e.target.value)}><option value="">Select participant</option>{activeClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-        <Field label="Date" type="date" value={draft.date} onChange={e => updateDraft('date', e.target.value)} />
-        <Field label="Start Time" type="time" value={draft.startTime} onChange={e => updateDraft('startTime', e.target.value)} />
-        <Field label="End Time" type="time" value={draft.endTime} onChange={e => updateDraft('endTime', e.target.value)} />
-        <Field label="Location" value={draft.location} onChange={e => updateDraft('location', e.target.value)} placeholder="Participant home / community access" />
-        <Field label="Support Type" value={draft.supportType} onChange={e => updateDraft('supportType', e.target.value)} />
-        <label><span>Status</span><select value={draft.status} onChange={e => updateDraft('status', e.target.value)}>{['Scheduled','In Progress','Completed','Cancelled','Missed'].map(x => <option key={x}>{x}</option>)}</select></label>
+    <Card title="Smart Scheduling" action={`${filteredShifts.length} visible · ${coverageHours.toFixed(1)} hrs`}>
+      <p>Plan client support, assign employees, monitor live clock-ins and keep worker instructions attached to each shift. Employee portal users only see shifts assigned to their employee email/profile.</p>
+      <div className="schedule-command-centre">
+        <InsightCard label="Today" value={todayShifts.length} sub="Assigned shifts" />
+        <InsightCard label="Live" value={liveShifts.length} sub="Clocked in now" />
+        <InsightCard label="Workers" value={activeWorkers.length} sub={`${unassignedWorkers.length} without upcoming shifts`} />
+        <InsightCard label="Participants" value={activeClients.length} sub="Available clients" />
       </div>
-      <Field label="Worker Instructions / Admin Notes" multiline value={draft.adminNotes || ''} onChange={e => updateDraft('adminNotes', e.target.value)} />
-      <button className="primary" onClick={saveShift}>{editingId ? 'Update Shift' : 'Save Shift'}</button>
-      {editingId && <button onClick={() => { setEditingId(null); setDraft(emptyShift()); }}>Cancel Edit</button>}
+      <div className="schedule-toolbar">
+        <div className="segmented-control">{['Week','List'].map(tab => <button key={tab} className={view === tab ? 'active' : ''} onClick={() => setView(tab)}>{tab}</button>)}</div>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search worker, client, location…" />
+        <select value={filterWorker} onChange={e => setFilterWorker(e.target.value)}><option value="all">All workers</option>{activeWorkers.map(w => <option key={w.id} value={w.id}>{w.name || w.email}</option>)}</select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">All statuses</option>{statusList.map(x => <option key={x}>{x}</option>)}</select>
+      </div>
     </Card>
-    <Card title="Assigned Shifts"><div className="client-table"><div className="client-table-head"><span>Shift</span><span>Worker</span><span>Participant</span><span>Status</span><span>Actions</span></div><Records rows={upcoming} empty="No shifts assigned yet." render={shift => <div className="client-table-row" key={shift.id}><div><b>{fmt(shift.date)} · {shift.startTime}–{shift.endTime}</b><small>{shift.location || shift.supportType || 'No location'}</small></div><div><b>{findWorker(shift.workerId)?.name || 'Unassigned'}</b><small>{findWorker(shift.workerId)?.email || '-'}</small></div><div><b>{findClient(shift.participantId)?.name || 'Participant missing'}</b><small>{shift.adminNotes || 'No admin notes'}</small></div><div><span className={`traffic-pill ${shift.status === 'Completed' ? 'current' : shift.status === 'In Progress' ? 'due' : shift.status === 'Missed' ? 'overdue' : ''}`}>{shift.status || 'Scheduled'}</span></div><div className="actions"><button onClick={() => editShift(shift)}>Edit</button><button className="danger" onClick={() => deleteShift(shift.id)}>Delete</button></div></div>} /></div></Card>
+
+    <Card title={editingId ? 'Edit Client Shift' : 'Add Client Shift'} action={editingId ? 'Editing assignment' : 'New assignment'}>
+      {(!activeWorkers.length || !activeClients.length) && <div className="auth-message">Add at least one employee in Compliance &gt; Employees and one participant before creating assigned shifts.</div>}
+      <div className="schedule-form-grid">
+        <label><span>Employee / Support Worker</span><select value={draft.workerId} onChange={e => updateDraft('workerId', e.target.value)}><option value="">Select employee</option>{activeWorkers.map(w => <option key={w.id} value={w.id}>{w.name || w.email} {w.email ? `· ${w.email}` : ''}</option>)}</select></label>
+        <label><span>Client / Participant</span><select value={draft.participantId} onChange={e => updateDraft('participantId', e.target.value)}><option value="">Select client</option>{activeClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <Field label="Date" type="date" value={draft.date} onChange={e => updateDraft('date', e.target.value)} />
+        <Field label="Start" type="time" value={draft.startTime} onChange={e => updateDraft('startTime', e.target.value)} />
+        <Field label="Finish" type="time" value={draft.endTime} onChange={e => updateDraft('endTime', e.target.value)} />
+        <label><span>Status</span><select value={draft.status} onChange={e => updateDraft('status', e.target.value)}>{statusList.map(x => <option key={x}>{x}</option>)}</select></label>
+        <Field label="Location" value={draft.location} onChange={e => updateDraft('location', e.target.value)} placeholder="Participant home, community access, telehealth…" />
+        <Field label="Support Type" value={draft.supportType} onChange={e => updateDraft('supportType', e.target.value)} placeholder="Personal care, community access…" />
+      </div>
+      <Field label="Worker Instructions / Admin Notes" multiline value={draft.adminNotes || ''} onChange={e => updateDraft('adminNotes', e.target.value)} placeholder="Key risks, goals, transport notes, medication prompts, handover details…" />
+      <div className="actions"><button className="primary" onClick={saveShift}>{editingId ? 'Update Shift' : 'Assign Employee to Shift'}</button>{editingId && <button onClick={() => { setEditingId(null); setDraft(emptyShift()); }}>Cancel Edit</button>}</div>
+    </Card>
+
+    {view === 'Week' && <Card title="This Week Coverage"><div className="schedule-week-board">{weekDays.map(day => {
+      const dayRows = weekShifts.filter(shift => shift.date === day);
+      return <section className="schedule-day-column" key={day}><div className="schedule-day-head"><b>{new Date(`${day}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}</b><small>{fmt(day)}</small></div>{dayRows.length ? dayRows.map(shift => <button className="schedule-mini-card" key={shift.id} onClick={() => editShift(shift)}><span>{shift.startTime}–{shift.endTime}</span><b>{findClient(shift.participantId)?.name || shift.participantName || 'Client'}</b><small>{findWorker(shift.workerId)?.name || shift.workerName || 'Worker'} · {shift.supportType}</small><em className={`traffic-pill ${getShiftTone(shift.status)}`}>{shift.status || 'Scheduled'}</em></button>) : <small className="muted">No shifts</small>}</section>;
+    })}</div></Card>}
+
+    <Card title="Assigned Shifts Register"><div className="client-table schedule-register"><div className="client-table-head"><span>Shift</span><span>Employee</span><span>Client</span><span>Live Status</span><span>Actions</span></div><Records rows={filteredShifts} empty="No shifts match this view." render={shift => {
+      const worker = findWorker(shift.workerId);
+      const client = findClient(shift.participantId);
+      const late = (shift.status || 'Scheduled') === 'Scheduled' && `${shift.date || ''}T${shift.startTime || '00:00'}` < nowKey;
+      return <div className="client-table-row" key={shift.id}><div><b>{fmt(shift.date)} · {shift.startTime}–{shift.endTime}</b><small>{shift.location || shift.supportType || 'No location'} · {hoursBetween(shift.startTime, shift.endTime).toFixed(1)} hrs</small></div><div><b>{worker?.name || shift.workerName || 'Unassigned'}</b><small>{worker?.email || shift.workerEmail || 'No employee email'}</small></div><div><b>{client?.name || shift.participantName || 'Participant missing'}</b><small>{shift.adminNotes || 'No admin notes'}</small></div><div><span className={`traffic-pill ${late ? 'overdue' : getShiftTone(shift.status)}`}>{late ? 'Needs review' : shift.status || 'Scheduled'}</span><small>{shift.startedAt ? `In: ${new Date(shift.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not clocked in'}{shift.endedAt ? ` · Out: ${new Date(shift.endedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</small></div><div className="actions"><button onClick={() => editShift(shift)}>Edit</button><button onClick={() => duplicateShift(shift)}>Duplicate</button><button className="danger" onClick={() => deleteShift(shift.id)}>Delete</button></div></div>;
+    }} /></div></Card>
   </>;
 }
 
@@ -2278,7 +2354,8 @@ function WorkerPortal({ user, business, worker, workers = [], clients = [], shif
     <header className="worker-top"><div><BrandMark compact /><b>{business?.name || 'Kajola Care'}</b><small>Employee Portal</small></div><button className="ghost" onClick={onSignOut}>Sign out</button></header>
     <main className="worker-main">
       <section className="worker-hero"><small>Welcome</small><h1>{matchedWorker?.name || getFirstName(user)}</h1><p>View assigned shifts, sign in/out and submit shift notes.</p></section>
-      {!matchedWorker && <div className="auth-message">This account is in employee mode, but no worker profile email matches {user?.email}. Ask an admin to add this email to Employees Compliance.</div>}
+      {!matchedWorker && <div className="auth-message"><b>Employee Profile Not Found</b><br />Your account is not yet linked to an employee record. Ask an admin to add {user?.email} under Compliance &gt; Employees before assigning shifts.</div>}
+      {matchedWorker && workerShifts.length === 0 && <div className="auth-message"><b>No assigned shifts yet</b><br />Your employee profile is active, but no client shifts have been assigned to you yet.</div>}
       <nav className="worker-tabs">{['Today','All Shifts','Notes'].map(tab => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}>{tab}</button>)}</nav>
       <div className="worker-shift-list"><Records rows={visible} empty="No assigned shifts found." render={shift => <WorkerShiftCard key={shift.id} shift={shift} client={findClient(shift.participantId)} onStart={() => startShift(shift)} onEnd={() => endShift(shift)} onNotes={notes => patchShift(shift.id, { notes })} />} /></div>
     </main>

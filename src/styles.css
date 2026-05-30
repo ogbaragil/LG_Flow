@@ -1036,3 +1036,23 @@ html[data-theme="dark"] .compliance-report-group-head small{color:#cbd5e1}
 .worker-shift-card{border:1px solid rgba(255,255,255,.1);border-radius:26px;padding:20px;margin:14px 0;background:rgba(13,18,28,.86);box-shadow:0 18px 46px rgba(0,0,0,.28)}
 .worker-shift-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.worker-shift-head small,.worker-shift-card small{color:#9aa5b7}.worker-shift-head h3{margin:5px 0 0;font-size:25px}.worker-shift-card p{color:#b8c2d2;line-height:1.5}.worker-actions{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.worker-actions button{width:auto}
 @media(max-width:720px){.worker-top{padding:12px}.worker-top small{display:none}.worker-actions button{width:100%}.worker-shift-head{display:block}.auth-role-tabs{grid-template-columns:1fr}}
+
+/* State-of-the-art scheduling workspace */
+.schedule-command-centre{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0}
+.schedule-toolbar{display:grid;grid-template-columns:auto minmax(220px,1fr) minmax(180px,.35fr) minmax(160px,.3fr);gap:10px;align-items:center;margin-top:16px}
+.segmented-control{display:flex;gap:6px;padding:6px;border:1px solid rgba(215,180,106,.18);border-radius:16px;background:rgba(255,255,255,.04)}
+.segmented-control button{margin:0;border-radius:12px;box-shadow:none;background:transparent;color:var(--muted)}
+.segmented-control button.active{background:linear-gradient(135deg,#f7dfa0,#b98b39);color:#171106}
+.schedule-form-grid{display:grid;grid-template-columns:1.3fr 1.3fr repeat(4,minmax(120px,.65fr));gap:14px;margin:12px 0}
+.schedule-week-board{display:grid;grid-template-columns:repeat(7,minmax(130px,1fr));gap:12px;overflow-x:auto;padding-bottom:8px}
+.schedule-day-column{min-height:210px;border:1px solid rgba(255,255,255,.1);border-radius:24px;padding:12px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.02))}
+.schedule-day-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.08)}
+.schedule-day-head b{font-size:16px}.schedule-day-head small{color:var(--muted)}
+.schedule-mini-card{display:block;width:100%;text-align:left;margin:8px 0;padding:12px;border-radius:18px;border:1px solid rgba(215,180,106,.18);background:rgba(8,13,22,.74);box-shadow:0 12px 28px rgba(0,0,0,.18);color:var(--text)}
+.schedule-mini-card span,.schedule-mini-card small{display:block;color:var(--muted)}
+.schedule-mini-card b{display:block;margin:5px 0;color:var(--text)}
+.schedule-mini-card em{display:inline-flex;margin-top:8px;font-style:normal;font-size:11px}
+.schedule-register .client-table-row{align-items:center}
+.schedule-register .actions{display:flex;gap:8px;flex-wrap:wrap}.schedule-register .actions button{width:auto}
+@media(max-width:1100px){.schedule-command-centre{grid-template-columns:repeat(2,minmax(0,1fr))}.schedule-toolbar,.schedule-form-grid{grid-template-columns:1fr 1fr}.schedule-week-board{grid-template-columns:repeat(7,190px)}}
+@media(max-width:720px){.schedule-command-centre,.schedule-toolbar,.schedule-form-grid{grid-template-columns:1fr}.segmented-control{width:100%}.segmented-control button{flex:1}.schedule-week-board{grid-template-columns:1fr;overflow-x:visible}.schedule-register .actions button{width:100%}}
