@@ -586,7 +586,7 @@ export default function App() {
   const deleteClient = (cid) => invoices.some(i => i.clientId === cid) ? alert('This participant has invoices and cannot be deleted.') : setClients(prev => prev.filter(c => c.id !== cid));
 
   const setLine = (lineId, field, value) => setInvoiceForm(p => ({ ...p, lines: p.lines.map(l => l.id === lineId ? { ...l, [field]: value } : l) }));
-  const selectItem = (lineId, value) => { const item = pricingItems.find(i => i.itemNumber === value || i.id === value || i.label === value) || pricingItems[0] || DEFAULT_PRICING_ITEMS[0]; setInvoiceForm(p => ({ ...p, lines: p.lines.map(l => l.id === lineId ? { ...l, itemCode: item.itemNumber, itemLabel: item.label, rate: String(item.rate), unitType: item.unitType } : l) })); };
+  const selectItem = (lineId, value) => { const item = pricingItems.find(i => i.itemNumber === value || i.id === value || i.label === value) || safePricingItems[0] || DEFAULT_PRICING_ITEMS[0]; setInvoiceForm(p => ({ ...p, lines: p.lines.map(l => l.id === lineId ? { ...l, itemCode: item.itemNumber, itemLabel: item.label, rate: String(item.rate), unitType: item.unitType } : l) })); };
 
   const syncInvoiceTransaction = (invoice, status = invoice?.status, note = '') => {
     if (!invoice?.id) return;
@@ -668,7 +668,7 @@ export default function App() {
       }
     } else {
       const stamp = todayISO().replace(/-/g, '');
-      const next = invoices.filter(i => String(i.invoiceNumber).startsWith(`INV-${stamp}-`)).length + 1;
+      const next = safeInvoices.filter(i => String(i.invoiceNumber).startsWith(`INV-${stamp}-`)).length + 1;
       savedInvoice = {
         id: makeId('invoice'),
         invoiceNumber: `INV-${stamp}-${String(next).padStart(3, '0')}`,
@@ -2395,6 +2395,10 @@ function NdisPricingManager({ items, onChange, onSave }) {
 
 
 function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts = () => {}, invoices = [], setInvoices = () => {}, pricingItems = DEFAULT_PRICING_ITEMS }) {
+  const safeClients = Array.isArray(clients) ? clients.filter(c => c && typeof c === 'object') : [];
+  const safeWorkers = Array.isArray(workers) ? workers.filter(w => w && typeof w === 'object') : [];
+  const safeInvoices = Array.isArray(invoices) ? invoices.filter(i => i && typeof i === 'object') : [];
+  const safePricingItems = Array.isArray(pricingItems) && pricingItems.length ? pricingItems : DEFAULT_PRICING_ITEMS;
   const [draft, setDraft] = useState(emptyShift());
   const [editingId, setEditingId] = useState(null);
   const [view, setView] = useState('Calendar');
@@ -2403,10 +2407,10 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
   const [search, setSearch] = useState('');
   const [detailId, setDetailId] = useState(null);
   const safeShifts = normaliseShifts(shifts);
-  const activeWorkers = workers.filter(w => w && !w.archived);
-  const activeClients = clients.filter(c => c && !c.archived);
-  const findWorker = (id) => workers.find(w => w.id === id);
-  const findClient = (id) => clients.find(c => c.id === id);
+  const activeWorkers = safeWorkers.filter(w => !w.archived);
+  const activeClients = safeClients.filter(c => !c.archived);
+  const findWorker = (id) => safeWorkers.find(w => w.id === id);
+  const findClient = (id) => safeClients.find(c => c.id === id);
   const updateDraft = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
   const shiftDateTime = (shift) => `${shift.date || ''}T${shift.startTime || '00:00'}`;
   const nowKey = new Date().toISOString().slice(0, 16);
@@ -2461,12 +2465,12 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
     const client = findClient(shift.participantId);
     if (!client) return updateShift(shift.id, { invoiceStatus: 'Ready for invoice', invoiceReadyAt: new Date().toISOString() });
     const existingInvoiceId = shift.invoiceId;
-    if (existingInvoiceId && invoices.some(inv => inv.id === existingInvoiceId)) return updateShift(shift.id, { invoiceStatus: 'Invoice generated', invoiceReadyAt: new Date().toISOString() });
-    const item = pricingItems.find(p => String(shift.supportType || '').toLowerCase().includes(String(p.label || '').toLowerCase())) || pricingItems[0] || { itemNumber: '', label: shift.supportType || 'Support worker shift', unitType: 'hours', rate: 0 };
+    if (existingInvoiceId && safeInvoices.some(inv => inv.id === existingInvoiceId)) return updateShift(shift.id, { invoiceStatus: 'Invoice generated', invoiceReadyAt: new Date().toISOString() });
+    const item = safePricingItems.find(p => String(shift.supportType || '').toLowerCase().includes(String(p.label || '').toLowerCase())) || safePricingItems[0] || { itemNumber: '', label: shift.supportType || 'Support worker shift', unitType: 'hours', rate: 0 };
     const qty = Number((actualHours(shift) || scheduledHours(shift) || 0).toFixed(2));
     const rate = Number(item.rate || 0);
     const stamp = todayISO().replace(/-/g, '');
-    const next = invoices.filter(i => String(i.invoiceNumber).startsWith(`INV-${stamp}-`)).length + 1;
+    const next = safeInvoices.filter(i => String(i.invoiceNumber).startsWith(`INV-${stamp}-`)).length + 1;
     const invoice = {
       id: makeId('invoice'),
       invoiceNumber: `INV-${stamp}-${String(next).padStart(3, '0')}`,
