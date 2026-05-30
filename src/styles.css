@@ -1107,3 +1107,23 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
 .weekday-picker button { border: 1px solid var(--border); border-radius: 999px; padding: 0.5rem 0.75rem; background: var(--card); color: var(--text); font-weight: 800; cursor: pointer; }
 .weekday-picker button.active { background: var(--primary); border-color: var(--primary); color: white; }
 .weekday-picker small { color: var(--muted); }
+
+/* v17.2 employee portal refinements */
+.worker-dashboard-hero { align-items: stretch; }
+.worker-next-shift { display:flex; justify-content:space-between; gap:1rem; align-items:center; background:#ffffff; border:1px solid #dbe7ef; border-radius:24px; padding:1.1rem; box-shadow:0 18px 45px rgba(15,23,42,.08); margin:.9rem 0; }
+.worker-next-shift h2 { margin:.2rem 0; color:#0f172a; }
+.worker-next-shift p { margin:.2rem 0; color:#475569; }
+.recurring-badge { display:inline-flex; margin-top:.35rem; padding:.28rem .55rem; border-radius:999px; background:#ecfeff; color:#155e75; font-size:.72rem; font-weight:800; border:1px solid #bae6fd; }
+.worker-detail-toggle { width:100%; margin:.75rem 0; border:1px solid #cbd5e1; background:#f8fafc; color:#0f172a; border-radius:14px; padding:.7rem .85rem; font-weight:800; }
+.worker-detail-panel { display:grid; gap:.75rem; border:1px solid #dbe7ef; background:#f8fafc; border-radius:18px; padding:1rem; margin:.5rem 0 .8rem; color:#0f172a; }
+.worker-detail-panel small, .worker-note-field small { display:block; color:#64748b; font-weight:800; text-transform:uppercase; letter-spacing:.04em; font-size:.7rem; }
+.worker-detail-panel p { margin:.25rem 0 0; color:#334155; }
+.worker-running-timer { display:flex; justify-content:space-between; gap:.75rem; align-items:center; background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; border-radius:16px; padding:.8rem; margin:.75rem 0; }
+.worker-incident-toggle { display:flex; gap:.55rem; align-items:center; margin:.75rem 0; font-weight:800; color:#0f172a; }
+.worker-incident-box { display:grid; gap:.75rem; background:#fff7ed; border:1px solid #fed7aa; border-radius:18px; padding:1rem; margin:.75rem 0; }
+.worker-incident-box label { display:grid; gap:.35rem; color:#0f172a; font-weight:800; }
+.worker-incident-box input, .worker-incident-box textarea { width:100%; border:1px solid #cbd5e1; border-radius:12px; padding:.75rem; font:inherit; background:#fff; color:#0f172a; }
+.worker-incident-box textarea { min-height:90px; resize:vertical; }
+.worker-status.missed { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
+.worker-tabs { overflow-x:auto; }
+@media (max-width: 720px) { .worker-next-shift { flex-direction:column; align-items:stretch; } .worker-running-timer { flex-direction:column; align-items:flex-start; } }

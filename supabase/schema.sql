@@ -247,7 +247,13 @@ begin
     'status', p_patch->>'status',
     'startedAt', p_patch->>'startedAt',
     'endedAt', p_patch->>'endedAt',
+    'viewedAt', p_patch->>'viewedAt',
     'notes', p_patch->>'notes',
+    'notesSubmittedAt', p_patch->>'notesSubmittedAt',
+    'incidentReported', p_patch->'incidentReported',
+    'incidentType', p_patch->>'incidentType',
+    'incidentDescription', p_patch->>'incidentDescription',
+    'incidentAction', p_patch->>'incidentAction',
     'updatedAt', coalesce(p_patch->>'updatedAt', now()::text)
   ));
 
