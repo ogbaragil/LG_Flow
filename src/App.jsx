@@ -126,6 +126,27 @@ const normaliseMeta = (payload = {}) => ({
   sectionsUpdatedAt: { ...(payload._meta?.sectionsUpdatedAt || {}) },
 });
 const normaliseTransactions = (transactions = [], business = {}) => Array.isArray(transactions) ? transactions.map(txn => (txn?.clientId === BUSINESS_TXN_CLIENT_ID ? { ...txn, clientName: txn.clientName || business?.name || 'Business' } : txn)) : [];
+
+const normaliseShifts = (rows = []) => Array.isArray(rows) ? rows.filter(row => row && typeof row === 'object').map(row => ({
+  id: row.id || makeId('shift'),
+  workerId: row.workerId || '',
+  participantId: row.participantId || row.clientId || '',
+  date: row.date || todayISO(),
+  startTime: row.startTime || '09:00',
+  endTime: row.endTime || '11:00',
+  location: row.location || row.address || '',
+  supportType: row.supportType || row.serviceType || 'Personal care',
+  status: row.status || 'Scheduled',
+  startedAt: row.startedAt || '',
+  endedAt: row.endedAt || '',
+  notes: row.notes || '',
+  adminNotes: row.adminNotes || '',
+  reviewStatus: row.reviewStatus || 'Not reviewed',
+  payrollStatus: row.payrollStatus || 'Not generated',
+  invoiceStatus: row.invoiceStatus || 'Not generated',
+  ...row,
+})) : [];
+
 const normalisePayload = (payload = {}) => {
   const normalisedBusiness = normaliseBusiness(payload.business || {});
   return {
@@ -134,7 +155,7 @@ const normalisePayload = (payload = {}) => {
     invoices: Array.isArray(payload.invoices) ? payload.invoices : [],
     transactions: normaliseTransactions(payload.transactions, normalisedBusiness),
     workers: normaliseWorkers(payload.workers || []),
-    shifts: Array.isArray(payload.shifts) ? payload.shifts : [],
+    shifts: normaliseShifts(payload.shifts || []),
     risks: Array.isArray(payload.risks) ? payload.risks : [],
     incidents: Array.isArray(payload.incidents) ? payload.incidents : [],
     complaints: Array.isArray(payload.complaints) ? payload.complaints : [],
@@ -378,6 +399,7 @@ export default function App() {
   const lastSectionSnapshotsRef = useRef({});
   const sectionUpdatedAtRef = useRef({});
   const skipNextAutoSyncRef = useRef(false);
+  const isEmployeeRoute = ['employee', 'employee-portal', 'worker', 'staff'].includes(String(window.location.pathname || '').replace(/^\/+/, '').split('/')[0]);
 
   useEffect(() => {
     let mounted = true;
@@ -541,7 +563,7 @@ export default function App() {
     const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
     const expenses = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount || 0), 0);
     const outstanding = invoices.filter(i => !['Paid', 'Cancelled'].includes(normaliseInvoiceStatus(i.status))).reduce((s, i) => s + Number(i.total || 0), 0);
-    const activeClients = clients.filter(c => !c.archived);
+    const activeClients = clients.filter(c => c && !c.archived);
     const totalBudget = activeClients.reduce((s, c) => s + Number(c.budget || 0), 0);
     const invoicedTotal = invoices.reduce((s, i) => s + Number(i.total || 0), 0);
     const remainingBudget = totalBudget - invoicedTotal;
@@ -843,11 +865,12 @@ export default function App() {
   };
 
   if (authLoading) return <LoadingScreen />;
-  if (!user && employeeSession?.workerId) {
+  if (employeeSession?.workerId && (!user || isEmployeeRoute)) {
     if (!storageLoaded) return <LoadingScreen message="Loading employee portal…" />;
     const currentWorker = workers.find(w => w.id === employeeSession.workerId);
     return <WorkerPortal employeeSession={employeeSession} business={business} worker={currentWorker} workers={workers} clients={clients} shifts={shifts} setShifts={setShifts} onCloudPayload={applyPayload} onSignOut={() => { localStorage.removeItem(EMPLOYEE_SESSION_KEY); setEmployeeSession(null); setStorageLoaded(false); }} />;
   }
+  if (isEmployeeRoute && !employeeSession?.workerId) return <AuthGate forceRole="worker" onEmployeeLogin={(session, payload) => { localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session)); setEmployeeSession(session); applyPayload(payload); setStorageLoaded(true); setCloudChecked(true); }} />;
   if (!user) return <AuthGate onEmployeeLogin={(session, payload) => { localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session)); setEmployeeSession(session); applyPayload(payload); setStorageLoaded(true); setCloudChecked(true); }} />;
 
   const displayName = getFirstName(user);
@@ -987,7 +1010,7 @@ function BrandMark({ compact = false }) {
 function MobileShell({ active, setActive, complianceSection, setComplianceSection, displayName, welcomeMessage, business, setBusiness, saveBusiness, pricingItems, totals, clients, invoices, transactions, workers, setWorkers, shifts = [], setShifts = () => {}, risks = [], setRisks = () => {}, incidents = [], setIncidents = () => {}, complaints = [], setComplaints = () => {}, improvements = [], setImprovements = () => {}, audits = [], setAudits = () => {}, auditReports = [], setAuditReports = () => {}, governanceReviews = [], setGovernanceReviews = () => {}, documents = [], setDocuments = () => {}, notice, user, theme, toggleTheme, onSignOut, clientForm, setClientForm, editingClient, saveClient, editClient, archiveClient, deleteClient, cancelClient, invoiceForm, setInvoiceForm, editingInvoice, setLine, selectItem, addLine, removeLine, saveInvoice, editInvoice, deleteInvoice, exportPDF, updateInvoiceStatus, cancelInvoice, txnForm, setTxnForm, editingTxn, saveTxn, editTxn, deleteTxn, cancelTxn, settings }) {
   const [fabOpen, setFabOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const activeClients = clients.filter(c => !c.archived);
+  const activeClients = clients.filter(c => c && !c.archived);
   const alerts = getMobileAlerts({ clients, invoices, totals, business, workers });
   const recentInvoices = invoices.slice(0, 4);
   const openAction = (tab) => { setFabOpen(false); setMoreOpen(false); setActive(tab); setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 20); };
@@ -2379,8 +2402,9 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
   const [detailId, setDetailId] = useState(null);
-  const activeWorkers = workers.filter(w => !w.archived);
-  const activeClients = clients.filter(c => !c.archived);
+  const safeShifts = normaliseShifts(shifts);
+  const activeWorkers = workers.filter(w => w && !w.archived);
+  const activeClients = clients.filter(c => c && !c.archived);
   const findWorker = (id) => workers.find(w => w.id === id);
   const findClient = (id) => clients.find(c => c.id === id);
   const updateDraft = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
@@ -2465,7 +2489,7 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
     setInvoices(prev => [invoice, ...prev]);
     updateShift(shift.id, { invoiceStatus: 'Invoice generated', invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, invoiceReadyAt: new Date().toISOString() });
   };
-  const filteredShifts = [...shifts]
+  const filteredShifts = [...safeShifts]
     .filter(shift => filterWorker === 'all' || shift.workerId === filterWorker)
     .filter(shift => filterStatus === 'all' || (shift.status || 'Scheduled') === filterStatus)
     .filter(shift => {
@@ -2474,12 +2498,12 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
     })
     .sort((a,b) => shiftDateTime(a).localeCompare(shiftDateTime(b)));
   const weekShifts = filteredShifts.filter(shift => weekDays.includes(shift.date));
-  const todayShifts = shifts.filter(shift => shift.date === todayISO());
-  const liveShifts = shifts.filter(shift => shift.status === 'In Progress');
+  const todayShifts = safeShifts.filter(shift => shift.date === todayISO());
+  const liveShifts = safeShifts.filter(shift => shift.status === 'In Progress');
   const completedShifts = filteredShifts.filter(shift => shift.status === 'Completed');
   const reviewQueue = completedShifts.filter(shift => (shift.notes || '').trim() && shift.reviewStatus !== 'Reviewed');
   const payrollQueue = completedShifts.filter(shift => shift.reviewStatus === 'Reviewed' && shift.payrollStatus !== 'Timesheet generated');
-  const invoiceQueue = completedShifts.filter(shift => shift.reviewStatus === 'Reviewed' && shift.invoiceStatus !== 'Ready for invoice');
+  const invoiceQueue = completedShifts.filter(shift => shift.reviewStatus === 'Reviewed' && shift.invoiceStatus !== 'Invoice generated');
   const coverageHours = filteredShifts.reduce((sum, shift) => sum + scheduledHours(shift), 0);
   const actualCompletedHours = completedShifts.reduce((sum, shift) => sum + (actualHours(shift) || scheduledHours(shift)), 0);
   const statusList = ['Scheduled','In Progress','Awaiting Notes','Completed','Cancelled','Missed'];
@@ -2676,16 +2700,18 @@ function LoadingScreen({ message = 'Securing your workspace…' }) {
   return <div className="auth-shell"><div className="auth-card"><BrandMark /><BrandWordmark hero /><p>{message}</p></div></div>;
 }
 
-function AuthGate({ onEmployeeLogin }) {
+function AuthGate({ onEmployeeLogin, forceRole = null }) {
   const [mode, setMode] = useState('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [loginRole, setLoginRole] = useState('admin');
+  const [loginRole, setLoginRole] = useState(forceRole || 'admin');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [setupUrl, setSetupUrl] = useState('');
   const [setupAnonKey, setSetupAnonKey] = useState('');
+
+  useEffect(() => { if (forceRole) { setLoginRole(forceRole); setMode('signin'); } }, [forceRole]);
 
   function saveSupabaseSetup(e) {
     e.preventDefault();
@@ -2741,7 +2767,7 @@ function AuthGate({ onEmployeeLogin }) {
   return <div className="auth-shell">
     <section className="auth-hero"><BrandMark /><BrandWordmark hero /><p>Care • Connect • Empower</p><div className="auth-glass"><b>{loginRole === 'admin' ? 'Admin workspace' : 'Employee portal'}</b><span>{loginRole === 'admin' ? 'Participants, invoices, finance and snapshots protected by Supabase Auth.' : 'Workers can view assigned shifts, clock in/out and submit shift notes.'}</span></div></section>
     <form className="auth-card" onSubmit={submit}>
-      <div className="auth-role-tabs"><button type="button" className={loginRole === 'admin' ? 'active' : ''} onClick={() => { setLoginRole('admin'); setEmail(''); setPassword(''); }}>Admin Sign In</button><button type="button" className={loginRole === 'worker' ? 'active' : ''} onClick={() => { setLoginRole('worker'); setMode('signin'); setEmail(''); setPassword(''); }}>Employee Sign In</button></div>
+      {!forceRole && <div className="auth-role-tabs"><button type="button" className={loginRole === 'admin' ? 'active' : ''} onClick={() => { setLoginRole('admin'); setEmail(''); setPassword(''); }}>Admin Sign In</button><button type="button" className={loginRole === 'worker' ? 'active' : ''} onClick={() => { setLoginRole('worker'); setMode('signin'); setEmail(''); setPassword(''); }}>Employee Sign In</button></div>}
       <h2>{mode === 'signup' ? 'Create your account' : loginRole === 'admin' ? 'Admin sign in' : 'Employee sign in'}</h2>
       <p>{mode === 'signup' ? (loginRole === 'admin' ? 'Start a secure Kajola Care admin workspace.' : 'Create an employee account for the worker portal.') : (loginRole === 'admin' ? 'Sign in to continue to the admin dashboard.' : 'Sign in to continue to your assigned shifts.')}</p>
       {mode === 'signup' && loginRole === 'admin' && <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} />}

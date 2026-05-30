@@ -1,20 +1,17 @@
-# Kajola Care v16.5 - End-to-End Shift Operations
+# Kajola Care v16.7 - Schedule Load Fix + Employee Portal Route
 
-This release completes the shift operations workflow:
+## Changes
+- Fixed Schedule page loading issue by normalising shift records before rendering.
+- Added stronger null-safety for workers, clients and shift data loaded from Supabase/local snapshots.
+- Added independent employee portal routes:
+  - `/employee`
+  - `/employee-portal`
+  - `/worker`
+  - `/staff`
+- These routes show employee username/password sign-in only.
+- Admin login remains available on the main app route `/`.
+- Employee shift actions continue to auto-save to Supabase through the employee portal RPC functions.
+- Admin still auto-loads cloud data on sign-in but does not auto-backup edits unless manually synced.
 
-1. Admin creates and assigns a client shift.
-2. Worker sees only their assigned shifts in the employee portal.
-3. Worker clocks in.
-4. Worker clocks out.
-5. Worker submits shift notes.
-6. Shift becomes Completed only after notes are submitted.
-7. Admin reviews clock-in/out evidence and worker notes.
-8. Admin generates timesheet status.
-9. Admin generates an invoice-ready record and creates a draft invoice from the reviewed shift.
-
-## Important Supabase step
-Run `supabase/schema.sql` in Supabase SQL Editor if you have not already installed the employee portal RPC functions from v16.4 or later.
-
-## Build
-`npm install`
-`npm run build`
+## Deployment note
+For single-page hosting such as Cloudflare Pages, configure fallback routing so `/employee` serves `index.html`.
