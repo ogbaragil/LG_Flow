@@ -2404,22 +2404,37 @@ function WorkerPortal({ user, employeeSession, business, worker, workers = [], c
   const [active, setActive] = useState('Today');
   const email = String(user?.email || '').toLowerCase();
   const matchedWorker = worker || workers.find(w => employeeSession?.workerId ? w.id === employeeSession.workerId : String(w.email || '').toLowerCase() === email);
-  const workerShifts = shifts.filter(s => matchedWorker ? s.workerId === matchedWorker.id : String(s.workerEmail || '').toLowerCase() === email);
+  const workerShifts = shifts
+    .filter(s => matchedWorker ? s.workerId === matchedWorker.id : String(s.workerEmail || '').toLowerCase() === email)
+    .sort((a, b) => `${a.date || ''} ${a.startTime || ''}`.localeCompare(`${b.date || ''} ${b.startTime || ''}`));
   const today = todayISO();
-  const visible = active === 'Today' ? workerShifts.filter(s => s.date === today) : workerShifts;
+  const visible = active === 'Today' ? workerShifts.filter(s => s.date === today) : active === 'Notes' ? workerShifts.filter(s => String(s.notes || '').trim()) : workerShifts;
   const findClient = (id) => clients.find(c => c.id === id);
   const patchShift = (id, patch) => setShifts(prev => prev.map(s => s.id === id ? { ...s, ...patch, updatedAt: new Date().toISOString() } : s));
   const startShift = (shift) => patchShift(shift.id, { status: 'In Progress', startedAt: shift.startedAt || new Date().toISOString() });
   const endShift = (shift) => patchShift(shift.id, { status: 'Completed', endedAt: new Date().toISOString() });
+  const inProgress = workerShifts.filter(s => s.status === 'In Progress').length;
+  const completed = workerShifts.filter(s => s.status === 'Completed').length;
 
   return <div className="worker-shell">
-    <header className="worker-top"><div><BrandMark compact /><b>{business?.name || 'Kajola Care'}</b><small>Employee Portal</small></div><button className="ghost" onClick={onSignOut}>Sign out</button></header>
+    <header className="worker-top">
+      <div><BrandMark compact /><span><b>{business?.name || 'Kajola Care'}</b><small>Employee Portal</small></span></div>
+      <button className="ghost" onClick={onSignOut}>Sign out</button>
+    </header>
     <main className="worker-main">
-      <section className="worker-hero"><small>Welcome</small><h1>{matchedWorker?.name || employeeSession?.username || getFirstName(user)}</h1><p>View assigned shifts, sign in/out and submit shift notes.</p></section>
-      {!matchedWorker && <div className="auth-message"><b>Employee Profile Not Found</b><br />Your account is not yet linked to an employee record. Ask an admin to create or enable your employee username under Compliance &gt; Employees before assigning shifts.</div>}
-      {matchedWorker && workerShifts.length === 0 && <div className="auth-message"><b>No assigned shifts yet</b><br />Your employee profile is active, but no client shifts have been assigned to you yet.</div>}
+      <section className="worker-hero">
+        <div><small>Welcome back</small><h1>{matchedWorker?.name || employeeSession?.username || getFirstName(user)}</h1><p>View your assigned shifts, clock in and out, and submit clear shift notes.</p></div>
+        <div className="worker-hero-card"><span>{workerShifts.length}</span><small>Total assigned shifts</small></div>
+      </section>
+      <section className="worker-summary-grid">
+        <div><small>Today</small><b>{workerShifts.filter(s => s.date === today).length}</b></div>
+        <div><small>In progress</small><b>{inProgress}</b></div>
+        <div><small>Completed</small><b>{completed}</b></div>
+      </section>
+      {!matchedWorker && <div className="worker-notice"><b>Employee Profile Not Found</b><span>Your account is not yet linked to an employee record. Ask an admin to create or enable your employee username under Compliance &gt; Employees before assigning shifts.</span></div>}
+      {matchedWorker && workerShifts.length === 0 && <div className="worker-notice"><b>No assigned shifts yet</b><span>Your employee profile is active, but no client shifts have been assigned to you yet.</span></div>}
       <nav className="worker-tabs">{['Today','All Shifts','Notes'].map(tab => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}>{tab}</button>)}</nav>
-      <div className="worker-shift-list"><Records rows={visible} empty="No assigned shifts found." render={shift => <WorkerShiftCard key={shift.id} shift={shift} client={findClient(shift.participantId)} onStart={() => startShift(shift)} onEnd={() => endShift(shift)} onNotes={notes => patchShift(shift.id, { notes })} />} /></div>
+      <div className="worker-shift-list"><Records rows={visible} empty={active === 'Notes' ? 'No saved shift notes yet.' : 'No assigned shifts found.'} render={shift => <WorkerShiftCard key={shift.id} shift={shift} client={findClient(shift.participantId)} onStart={() => startShift(shift)} onEnd={() => endShift(shift)} onNotes={notes => patchShift(shift.id, { notes })} />} /></div>
     </main>
   </div>;
 }
@@ -2427,14 +2442,17 @@ function WorkerPortal({ user, employeeSession, business, worker, workers = [], c
 function WorkerShiftCard({ shift, client, onStart, onEnd, onNotes }) {
   const [notes, setNotes] = useState(shift.notes || '');
   useEffect(() => setNotes(shift.notes || ''), [shift.id, shift.notes]);
+  const status = shift.status || 'Scheduled';
   return <article className="worker-shift-card">
-    <div className="worker-shift-head"><div><small>{fmt(shift.date)} · {shift.startTime}–{shift.endTime}</small><h3>{client?.name || 'Assigned participant'}</h3></div><span className="traffic-pill current">{shift.status || 'Scheduled'}</span></div>
-    <p>{shift.location || 'Location not entered'} · {shift.supportType || 'Support shift'}</p>
-    {shift.adminNotes && <p><b>Admin notes:</b> {shift.adminNotes}</p>}
-    <div className="worker-actions"><button className="primary" disabled={shift.status === 'In Progress' || shift.status === 'Completed'} onClick={onStart}>Sign into shift</button><button disabled={shift.status !== 'In Progress'} onClick={onEnd}>Sign out of shift</button></div>
-    <Field label="Shift Notes" multiline value={notes} onChange={e => setNotes(e.target.value)} placeholder="Enter progress notes, observations, concerns or handover notes." />
-    <button onClick={() => onNotes(notes)}>Save Notes</button>
-    <small>{shift.startedAt ? `Started: ${new Date(shift.startedAt).toLocaleString()}` : 'Not started'} {shift.endedAt ? ` · Ended: ${new Date(shift.endedAt).toLocaleString()}` : ''}</small>
+    <div className="worker-shift-head">
+      <div><small>{fmt(shift.date)} · {shift.startTime}–{shift.endTime}</small><h3>{client?.name || 'Assigned participant'}</h3></div>
+      <span className={`worker-status ${status.toLowerCase().replace(/\s+/g, '-')}`}>{status}</span>
+    </div>
+    <div className="worker-meta"><span>{shift.location || 'Location not entered'}</span><span>{shift.supportType || 'Support shift'}</span></div>
+    {shift.adminNotes && <div className="worker-admin-note"><b>Admin notes</b><p>{shift.adminNotes}</p></div>}
+    <div className="worker-actions"><button className="primary" disabled={status === 'In Progress' || status === 'Completed'} onClick={onStart}>Sign into shift</button><button disabled={status !== 'In Progress'} onClick={onEnd}>Sign out of shift</button></div>
+    <label className="worker-note-field"><span>Shift Notes</span><textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Enter progress notes, observations, concerns or handover notes." /></label>
+    <div className="worker-card-footer"><button onClick={() => onNotes(notes)}>Save Notes</button><small>{shift.startedAt ? `Started: ${new Date(shift.startedAt).toLocaleString()}` : 'Not started'} {shift.endedAt ? ` · Ended: ${new Date(shift.endedAt).toLocaleString()}` : ''}</small></div>
   </article>;
 }
 
