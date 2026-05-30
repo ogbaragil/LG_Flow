@@ -2443,12 +2443,20 @@ function WorkerShiftCard({ shift, client, onStart, onEnd, onNotes }) {
   const [notes, setNotes] = useState(shift.notes || '');
   useEffect(() => setNotes(shift.notes || ''), [shift.id, shift.notes]);
   const status = shift.status || 'Scheduled';
+  const clientName = client?.name || shift.participantName || 'Assigned participant';
+  const address = shift.location || client?.address || 'Address not entered';
+  const serviceType = shift.supportType || 'Support shift';
+  const duration = shift.startTime && shift.endTime ? `${hoursBetween(shift.startTime, shift.endTime).toFixed(1)} hrs` : 'Duration pending';
   return <article className="worker-shift-card">
     <div className="worker-shift-head">
-      <div><small>{fmt(shift.date)} · {shift.startTime}–{shift.endTime}</small><h3>{client?.name || 'Assigned participant'}</h3></div>
+      <div><small>Client</small><h3>{clientName}</h3></div>
       <span className={`worker-status ${status.toLowerCase().replace(/\s+/g, '-')}`}>{status}</span>
     </div>
-    <div className="worker-meta"><span>{shift.location || 'Location not entered'}</span><span>{shift.supportType || 'Support shift'}</span></div>
+    <div className="worker-detail-grid">
+      <div className="worker-detail-item"><small>Shift Details</small><b>{fmt(shift.date)} · {shift.startTime || '--:--'}–{shift.endTime || '--:--'}</b><span>{duration}</span></div>
+      <div className="worker-detail-item"><small>Address</small><b>{address}</b><span>{address === 'Address not entered' ? 'Ask admin to confirm before travelling' : 'Attend this location unless advised otherwise'}</span></div>
+      <div className="worker-detail-item"><small>Service Type</small><b>{serviceType}</b><span>{shift.adminNotes ? 'See admin notes below' : 'No extra instructions entered'}</span></div>
+    </div>
     {shift.adminNotes && <div className="worker-admin-note"><b>Admin notes</b><p>{shift.adminNotes}</p></div>}
     <div className="worker-actions"><button className="primary" disabled={status === 'In Progress' || status === 'Completed'} onClick={onStart}>Sign into shift</button><button disabled={status !== 'In Progress'} onClick={onEnd}>Sign out of shift</button></div>
     <label className="worker-note-field"><span>Shift Notes</span><textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Enter progress notes, observations, concerns or handover notes." /></label>
