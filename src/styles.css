@@ -1127,3 +1127,19 @@ html, body, #root { max-width: 100%; overflow-x: hidden; }
 .worker-status.missed { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
 .worker-tabs { overflow-x:auto; }
 @media (max-width: 720px) { .worker-next-shift { flex-direction:column; align-items:stretch; } .worker-running-timer { flex-direction:column; align-items:flex-start; } }
+
+/* v17.3 Melbourne time + employee mobile overflow fixes */
+.worker-shell, .worker-main, .worker-shift-list, .worker-shift-card { max-width: 100%; overflow-x: hidden; }
+.worker-shift-card, .worker-shift-card * { box-sizing: border-box; }
+.worker-shift-head h3, .worker-detail-item b, .worker-detail-item span, .worker-detail-panel p, .worker-admin-note p, .worker-card-footer small { overflow-wrap: anywhere; word-break: normal; }
+.worker-incident-toggle { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: .75rem; width: 100%; line-height: 1.35; }
+.worker-incident-toggle input { width: 24px; height: 24px; margin: 0; flex: 0 0 auto; }
+.worker-incident-toggle span { min-width: 0; overflow-wrap: anywhere; white-space: normal; display: block; }
+.worker-note-field textarea { max-width: 100%; line-height: 1.45; }
+@media (max-width: 720px) {
+  .worker-main { width: 100%; padding-left: 12px; padding-right: 12px; }
+  .worker-shift-card { padding: 18px; border-radius: 24px; }
+  .worker-actions { display: grid; grid-template-columns: 1fr; }
+  .worker-actions button, .worker-card-footer button, .worker-detail-toggle { min-height: 52px; white-space: normal; }
+  .worker-note-field textarea { min-height: 132px; font-size: 16px; }
+}

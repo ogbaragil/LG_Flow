@@ -205,11 +205,20 @@ const statusSummary = (dateStr) => {
   return `${s.days} day${s.days === 1 ? '' : 's'} left`;
 };
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const addDaysISO = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
+const MELBOURNE_TZ = 'Australia/Melbourne';
+const melbourneParts = (value = new Date()) => {
+  const parts = new Intl.DateTimeFormat('en-AU', { timeZone: MELBOURNE_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false }).formatToParts(value);
+  return Object.fromEntries(parts.filter(p => p.type !== 'literal').map(p => [p.type, p.value]));
+};
+const todayISO = () => { const p = melbourneParts(); return `${p.year}-${p.month}-${p.day}`; };
+const addDaysISO = (days) => { const p = melbourneParts(); const d = new Date(Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day) + days, 12)); return d.toISOString().slice(0, 10); };
 const makeId = (p) => `${p}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-const money = (v) => `$${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const fmt = (d) => d ? new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '-';
+const money = (v) => `$${Number(v || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmt = (d) => d ? new Intl.DateTimeFormat('en-AU', { timeZone: MELBOURNE_TZ, month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${d}T12:00:00`)) : '-';
+const fmtWeekday = (d) => d ? new Intl.DateTimeFormat('en-AU', { timeZone: MELBOURNE_TZ, weekday: 'short' }).format(new Date(`${d}T12:00:00`)) : '-';
+const fmtMelbourneTime = (iso) => iso ? new Intl.DateTimeFormat('en-AU', { timeZone: MELBOURNE_TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(iso)) : '—';
+const fmtMelbourneDateTime = (iso) => iso ? new Intl.DateTimeFormat('en-AU', { timeZone: MELBOURNE_TZ, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)) : '—';
+const melbourneHour = () => Number(melbourneParts().hour || 0);
 const hoursBetween = (start, end) => {
   if (!start || !end) return 0;
   const [sh, sm] = String(start).split(':').map(Number);
@@ -224,7 +233,7 @@ const getFirstName = (user) => {
   return first === 'there' ? first : first.charAt(0).toUpperCase() + first.slice(1);
 };
 const getTimeGreeting = () => {
-  const hour = new Date().getHours();
+  const hour = melbourneHour();
   if (hour < 12) return 'Good morning';
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
@@ -1588,7 +1597,7 @@ function exportTransactionReportPdf({ business = {}, transactions = [], period =
   doc.text('Transaction Report', margin, 16);
   doc.setFont(undefined, 'normal');
   doc.setFontSize(9);
-  doc.text(`${option.label} · Generated ${new Date().toLocaleDateString()}`, margin, 24);
+  doc.text(`${option.label} · Generated ${new Intl.DateTimeFormat('en-AU', { timeZone: MELBOURNE_TZ }).format(new Date())}`, margin, 24);
   doc.setFont(undefined, 'bold');
   doc.text(safeText(business.name || 'Kajola Care'), right, 16, { align: 'right' });
   doc.setFont(undefined, 'normal');
@@ -2510,8 +2519,8 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
     const ms = new Date(shift.endedAt) - new Date(shift.startedAt);
     return Math.max(0, ms / 3600000);
   };
-  const timeOnly = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
-  const dateTime = (iso) => iso ? new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+  const timeOnly = (iso) => fmtMelbourneTime(iso);
+  const dateTime = (iso) => fmtMelbourneDateTime(iso);
   const saveShift = () => {
     if (!draft.workerId) return alert('Please choose a support worker. Add the employee in Compliance > Employees first, then assign them here.');
     if (!draft.participantId) return alert('Please choose a participant.');
@@ -2658,7 +2667,7 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
 
     {view === 'Calendar' && <Card title="This Week Coverage"><div className="schedule-week-board">{weekDays.map(day => {
       const dayRows = weekShifts.filter(shift => shift.date === day);
-      return <section className="schedule-day-column" key={day}><div className="schedule-day-head"><b>{new Date(`${day}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}</b><small>{fmt(day)}</small></div>{dayRows.length ? dayRows.map(shift => <button className="schedule-mini-card" key={shift.id} onClick={() => setDetailId(shift.id)}><span>{shift.startTime}–{shift.endTime}</span><b>{findClient(shift.participantId)?.name || shift.participantName || 'Client'}</b><small>{findWorker(shift.workerId)?.name || shift.workerName || 'Worker'} · {shift.supportType}</small><em className={`traffic-pill ${getShiftTone(shift.status)}`}>{shift.status || 'Scheduled'}</em></button>) : <small className="muted">No shifts</small>}</section>;
+      return <section className="schedule-day-column" key={day}><div className="schedule-day-head"><b>{fmtWeekday(day)}</b><small>{fmt(day)}</small></div>{dayRows.length ? dayRows.map(shift => <button className="schedule-mini-card" key={shift.id} onClick={() => setDetailId(shift.id)}><span>{shift.startTime}–{shift.endTime}</span><b>{findClient(shift.participantId)?.name || shift.participantName || 'Client'}</b><small>{findWorker(shift.workerId)?.name || shift.workerName || 'Worker'} · {shift.supportType}</small><em className={`traffic-pill ${getShiftTone(shift.status)}`}>{shift.status || 'Scheduled'}</em></button>) : <small className="muted">No shifts</small>}</section>;
     })}</div></Card>}
 
     {view === 'Timesheets' && <Card title="Timesheet Summary"><Records rows={workerTimesheets} empty="No reviewed completed shifts are ready for timesheets yet." render={item => <div className="timesheet-card" key={item.worker.id}><div><b>{item.worker.name}</b><small>{item.rows.length} reviewed shift{item.rows.length === 1 ? '' : 's'} · {item.hours.toFixed(2)} hrs</small></div><div className="actions"><button onClick={() => item.rows.forEach(generateTimesheet)}>Generate Timesheet</button><button onClick={() => item.rows.forEach(markInvoiceReady)}>Mark Invoice Ready</button></div></div>} /></Card>}
@@ -2745,7 +2754,7 @@ function WorkerPortal({ user, employeeSession, business, worker, workers = [], c
     </header>
     <main className="worker-main">
       <section className="worker-hero worker-dashboard-hero">
-        <div><small>Welcome back</small><h1>{matchedWorker?.name || employeeSession?.username || getFirstName(user)}</h1><p>Today first: review your next shift, clock in/out, complete notes and report incidents from one place.</p></div>
+        <div><small>Welcome back</small><h1>{matchedWorker?.name || employeeSession?.username || getFirstName(user)}</h1><p>Today first: review your next shift, clock in/out, complete notes and report incidents from one place. Times shown in Melbourne time.</p></div>
         <div className="worker-hero-card"><span>{todayShifts.length}</span><small>Today</small></div>
       </section>
       {nextShift && <section className="worker-next-shift">
@@ -2820,19 +2829,19 @@ function WorkerShiftCard({ shift, displayStatus, client, onStart, onEnd, onNotes
       <div><small>Emergency Contact</small><b>{client?.emergencyContact || client?.nextOfKin || 'Not entered'}</b></div>
       <div><small>Participant Notes</small><p>{client?.notes || client?.supportNotes || 'No participant notes entered.'}</p></div>
       <div><small>Admin Notes</small><p>{shift.adminNotes || 'No admin notes entered.'}</p></div>
-      <div><small>Timeline</small><p>{shift.viewedAt ? `Viewed: ${new Date(shift.viewedAt).toLocaleString()}` : 'Viewed time not recorded'}{shift.startedAt ? ` · Started: ${new Date(shift.startedAt).toLocaleString()}` : ''}{shift.endedAt ? ` · Ended: ${new Date(shift.endedAt).toLocaleString()}` : ''}</p></div>
+      <div><small>Timeline</small><p>{shift.viewedAt ? `Viewed: ${fmtMelbourneDateTime(shift.viewedAt)}` : 'Viewed time not recorded'}{shift.startedAt ? ` · Started: ${fmtMelbourneDateTime(shift.startedAt)}` : ''}{shift.endedAt ? ` · Ended: ${fmtMelbourneDateTime(shift.endedAt)}` : ''}</p></div>
     </div>}
-    {status === 'In Progress' && <div className="worker-running-timer"><b>Shift in progress</b><span>Started {new Date(shift.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · Elapsed {elapsedLabel}</span></div>}
+    {status === 'In Progress' && <div className="worker-running-timer"><b>Shift in progress</b><span>Started {fmtMelbourneTime(shift.startedAt)} Melbourne time · Elapsed {elapsedLabel}</span></div>}
     {shift.adminNotes && !open && <div className="worker-admin-note"><b>Admin notes</b><p>{shift.adminNotes}</p></div>}
     <div className="worker-actions"><button className="primary" disabled={status !== 'Scheduled'} onClick={onStart}>Sign into shift</button><button disabled={status !== 'In Progress'} onClick={onEnd}>Sign out of shift</button></div>
     <label className="worker-note-field"><span>Shift Notes {notesRequired ? '*' : ''}</span><textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Enter progress notes, observations, concerns or handover notes. Minimum 20 characters required to complete a shift." /><small>{notes.trim().length} characters{notesRequired && !notesValid ? ' · minimum 20 required' : ''}</small></label>
-    <label className="worker-incident-toggle"><input type="checkbox" checked={incident} onChange={e => setIncident(e.target.checked)} /> Report incident for this shift</label>
+    <label className="worker-incident-toggle"><input type="checkbox" checked={incident} onChange={e => setIncident(e.target.checked)} /><span>Report incident for this shift</span></label>
     {incident && <div className="worker-incident-box">
       <label><span>Incident Type</span><input value={incidentType} onChange={e => setIncidentType(e.target.value)} placeholder="Fall, behaviour, medication, injury…" /></label>
       <label><span>Description</span><textarea value={incidentDescription} onChange={e => setIncidentDescription(e.target.value)} placeholder="Describe what happened." /></label>
       <label><span>Immediate Action Taken</span><textarea value={incidentAction} onChange={e => setIncidentAction(e.target.value)} placeholder="What action did you take and who was notified?" /></label>
     </div>}
-    <div className="worker-card-footer"><button onClick={handleSaveNotes} disabled={saving || !notes.trim() || (notesRequired && !notesValid)}>{saving ? 'Saving…' : notesRequired ? 'Submit Notes & Complete Shift' : 'Save Notes'}</button><small>{saved ? 'Saved successfully.' : (shift.startedAt ? `Started: ${new Date(shift.startedAt).toLocaleString()}` : 'Not started')} {shift.endedAt && !saved ? ` · Ended: ${new Date(shift.endedAt).toLocaleString()}` : ''}</small></div>
+    <div className="worker-card-footer"><button onClick={handleSaveNotes} disabled={saving || !notes.trim() || (notesRequired && !notesValid)}>{saving ? 'Saving…' : notesRequired ? 'Submit Notes & Complete Shift' : 'Save Notes'}</button><small>{saved ? 'Saved successfully.' : (shift.startedAt ? `Started: ${fmtMelbourneDateTime(shift.startedAt)}` : 'Not started')} {shift.endedAt && !saved ? ` · Ended: ${fmtMelbourneDateTime(shift.endedAt)}` : ''}</small></div>
   </article>;
 }
 
