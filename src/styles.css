@@ -1065,3 +1065,39 @@ html[data-theme="dark"] .compliance-report-group-head small{color:#cbd5e1}
 .shift-detail-drawer{grid-column:1/-1;margin-top:12px;border:1px solid rgba(15,56,118,.14);border-radius:18px;background:linear-gradient(180deg,#fff,#f8fbff);padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;box-shadow:inset 0 1px 0 rgba(255,255,255,.8)}
 .shift-detail-drawer small,.timesheet-card small{display:block;text-transform:uppercase;letter-spacing:.09em;font-weight:900;color:#0b3b89;font-size:11px;margin-bottom:5px}.shift-detail-drawer b{color:#0b1325}.shift-detail-drawer section{grid-column:1/-1;border-top:1px solid #dbe7f6;padding-top:12px}.shift-detail-drawer p{margin:4px 0 0;color:#334155}.timesheet-card{border:1px solid #d9e6f7;border-radius:18px;background:#fff;padding:16px;margin:10px 0;display:flex;align-items:center;justify-content:space-between;gap:12px}.worker-status.awaiting-notes{background:#fff7db;color:#92400e;border-color:#f8d56a}.traffic-pill.due{background:#fff7db;color:#92400e;border-color:#f8d56a}
 @media(max-width:760px){.shift-detail-drawer{grid-template-columns:1fr}.timesheet-card{display:block}.timesheet-card .actions{margin-top:10px}}
+
+/* v17.0 schedule overflow and recurring shift polish */
+html, body, #root { max-width: 100%; overflow-x: hidden; }
+.main, .content, .card, .schedule-register, .client-table { min-width: 0; max-width: 100%; }
+.schedule-toolbar { grid-template-columns: minmax(0, auto) minmax(180px, 1fr) minmax(150px, .35fr) minmax(150px, .3fr); }
+.segmented-control { min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+.segmented-control button { white-space: nowrap; flex: 0 0 auto; }
+.schedule-form-grid { grid-template-columns: repeat(2, minmax(180px, 1.2fr)) repeat(4, minmax(112px, .65fr)); }
+.schedule-register.client-table, .schedule-register .client-table { overflow-x: auto; }
+.schedule-register .client-table-head, .schedule-register .client-table-row { grid-template-columns: minmax(180px,1.1fr) minmax(160px,.9fr) minmax(180px,1fr) minmax(170px,.9fr) minmax(260px,auto); min-width: 960px; }
+.schedule-row-expanded > div { min-width: 0; }
+.schedule-row-expanded b, .schedule-row-expanded small { overflow-wrap: anywhere; }
+.schedule-register .actions { justify-content: flex-start; min-width: 0; }
+.schedule-register .actions button { white-space: nowrap; }
+.recurring-shift-panel { margin: 14px 0 4px; border: 1px solid #d7e5f7; border-radius: 20px; background: linear-gradient(180deg,#f8fbff,#fff); padding: 15px; }
+.recurring-toggle { display: flex; align-items: center; gap: 10px; margin: 0; font-weight: 950; color: #07348B; }
+.recurring-toggle input { width: 18px; height: 18px; accent-color: #07348B; }
+.recurring-grid { display: grid; grid-template-columns: minmax(160px,.55fr) minmax(140px,.45fr) minmax(220px,1fr); gap: 12px; align-items: end; margin-top: 12px; }
+.recurring-preview { border: 1px dashed #bcd1ee; border-radius: 16px; padding: 12px 14px; background: #eef6ff; }
+.recurring-preview small { display: block; color: #07348B; text-transform: uppercase; letter-spacing: .1em; font-weight: 950; font-size: 11px; }
+.recurring-preview b { display: block; color: #0f172a; margin: 5px 0; }
+.recurring-preview span { color: #475569; font-size: 13px; line-height: 1.4; }
+@media(max-width:1180px){
+  .schedule-toolbar { grid-template-columns: 1fr 1fr; }
+  .schedule-form-grid { grid-template-columns: 1fr 1fr; }
+  .recurring-grid { grid-template-columns: 1fr 1fr; }
+  .recurring-preview { grid-column: 1 / -1; }
+}
+@media(max-width:760px){
+  .schedule-toolbar, .schedule-form-grid, .recurring-grid { grid-template-columns: 1fr; }
+  .segmented-control { display: flex; flex-wrap: nowrap; }
+  .schedule-register .client-table-head { display: none; }
+  .schedule-register .client-table-row { min-width: 0; grid-template-columns: 1fr; }
+  .schedule-register .actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .schedule-register .actions button { width: 100%; }
+}

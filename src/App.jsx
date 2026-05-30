@@ -2402,6 +2402,7 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
   const safePricingItems = Array.isArray(pricingItems) && pricingItems.length ? pricingItems : DEFAULT_PRICING_ITEMS;
   const [draft, setDraft] = useState(emptyShift());
   const [editingId, setEditingId] = useState(null);
+  const [recurring, setRecurring] = useState({ enabled: false, frequency: 'weekly', occurrences: 4 });
   const [view, setView] = useState('Calendar');
   const [filterWorker, setFilterWorker] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -2414,6 +2415,13 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
   const findClient = (id) => safeClients.find(c => c.id === id);
   const updateDraft = (field, value) => setDraft(prev => ({ ...prev, [field]: value }));
   const shiftDateTime = (shift) => `${shift.date || ''}T${shift.startTime || '00:00'}`;
+  const addDaysToISO = (isoDate, days) => {
+    const d = isoDate ? new Date(`${isoDate}T00:00:00`) : new Date();
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  const recurringStepDays = recurring.frequency === 'daily' ? 1 : recurring.frequency === 'fortnightly' ? 14 : 7;
+  const recurringCount = Math.min(52, Math.max(1, Number(recurring.occurrences) || 1));
   const nowKey = new Date().toISOString().slice(0, 16);
   const weekStart = new Date();
   weekStart.setHours(0, 0, 0, 0);
@@ -2443,7 +2451,7 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
     if (!draft.participantId) return alert('Please choose a participant.');
     const selectedWorker = findWorker(draft.workerId);
     const selectedClient = findClient(draft.participantId);
-    const clean = {
+    const baseShift = {
       ...draft,
       workerEmail: selectedWorker?.email || draft.workerEmail || '',
       workerName: selectedWorker?.name || draft.workerName || '',
@@ -2451,8 +2459,23 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
       updatedAt: new Date().toISOString(),
       status: draft.status || 'Scheduled'
     };
-    if (editingId) setShifts(prev => prev.map(shift => shift.id === editingId ? { ...clean, id: editingId } : shift));
-    else setShifts(prev => [{ ...clean, id: clean.id || makeId('shift'), createdAt: new Date().toISOString(), reviewStatus: 'Not reviewed', payrollStatus: 'Not generated', invoiceStatus: 'Not generated' }, ...prev]);
+    if (editingId) {
+      setShifts(prev => prev.map(shift => shift.id === editingId ? { ...baseShift, id: editingId } : shift));
+    } else {
+      const seriesId = recurring.enabled && recurringCount > 1 ? makeId('series') : '';
+      const newShifts = Array.from({ length: recurring.enabled ? recurringCount : 1 }, (_, idx) => ({
+        ...baseShift,
+        id: idx === 0 ? (baseShift.id || makeId('shift')) : makeId('shift'),
+        date: addDaysToISO(baseShift.date, idx * recurringStepDays),
+        createdAt: new Date().toISOString(),
+        reviewStatus: 'Not reviewed',
+        payrollStatus: 'Not generated',
+        invoiceStatus: 'Not generated',
+        recurrenceSeriesId: seriesId,
+        recurrenceLabel: seriesId ? `${recurring.frequency} · ${recurringCount} shifts` : ''
+      }));
+      setShifts(prev => [...newShifts, ...prev]);
+    }
     setDraft(emptyShift());
     setEditingId(null);
   };
@@ -2548,7 +2571,15 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
         <Field label="Service Type" value={draft.supportType} onChange={e => updateDraft('supportType', e.target.value)} placeholder="Personal care, community access, domestic assistance…" />
       </div>
       <Field label="Worker Instructions / Admin Notes" multiline value={draft.adminNotes || ''} onChange={e => updateDraft('adminNotes', e.target.value)} placeholder="Key risks, goals, transport notes, medication prompts, handover details…" />
-      <div className="actions"><button className="primary" onClick={saveShift}>{editingId ? 'Update Shift' : 'Assign Employee to Shift'}</button>{editingId && <button onClick={() => { setEditingId(null); setDraft(emptyShift()); }}>Cancel Edit</button>}</div>
+      {!editingId && <div className="recurring-shift-panel">
+        <label className="recurring-toggle"><input type="checkbox" checked={recurring.enabled} onChange={e => setRecurring(prev => ({ ...prev, enabled: e.target.checked }))} /><span>Create as recurring shift</span></label>
+        {recurring.enabled && <div className="recurring-grid">
+          <label><span>Repeat</span><select value={recurring.frequency} onChange={e => setRecurring(prev => ({ ...prev, frequency: e.target.value }))}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option></select></label>
+          <label><span>Number of shifts</span><input type="number" min="1" max="52" value={recurring.occurrences} onChange={e => setRecurring(prev => ({ ...prev, occurrences: e.target.value }))} /></label>
+          <div className="recurring-preview"><small>Preview</small><b>{recurringCount} shift{recurringCount === 1 ? '' : 's'} from {fmt(draft.date)}</b><span>{recurring.frequency} recurrence · same worker, client, time, address and service type.</span></div>
+        </div>}
+      </div>}
+      <div className="actions"><button className="primary" onClick={saveShift}>{editingId ? 'Update Shift' : recurring.enabled ? `Create ${recurringCount} Recurring Shifts` : 'Assign Employee to Shift'}</button>{editingId && <button onClick={() => { setEditingId(null); setDraft(emptyShift()); }}>Cancel Edit</button>}</div>
     </Card>
 
     {view === 'Calendar' && <Card title="This Week Coverage"><div className="schedule-week-board">{weekDays.map(day => {
@@ -2565,7 +2596,7 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
         const late = (shift.status || 'Scheduled') === 'Scheduled' && `${shift.date || ''}T${shift.startTime || '00:00'}` < nowKey;
         const opened = detailId === shift.id;
         return <div className="client-table-row schedule-row-expanded" key={shift.id}>
-          <div><b>{fmt(shift.date)} · {shift.startTime}–{shift.endTime}</b><small>{shift.location || client?.address || 'No address'} · {scheduledHours(shift).toFixed(1)} scheduled hrs</small></div>
+          <div><b>{fmt(shift.date)} · {shift.startTime}–{shift.endTime}</b><small>{shift.location || client?.address || 'No address'} · {scheduledHours(shift).toFixed(1)} scheduled hrs{shift.recurrenceLabel ? ` · ${shift.recurrenceLabel}` : ''}</small></div>
           <div><b>{worker?.name || shift.workerName || 'Unassigned'}</b><small>{worker?.employeeUsername ? `@${worker.employeeUsername}` : (worker?.email || shift.workerEmail || 'No login')}</small></div>
           <div><b>{client?.name || shift.participantName || 'Participant missing'}</b><small>{shift.supportType || 'No service type'} · {shift.adminNotes || 'No admin notes'}</small></div>
           <div><span className={`traffic-pill ${late ? 'overdue' : getShiftTone(shift.status)}`}>{late ? 'Needs review' : shift.status || 'Scheduled'}</span><small>In {timeOnly(shift.startedAt)} · Out {timeOnly(shift.endedAt)} · Actual {(actualHours(shift) || 0).toFixed(2)} hrs</small></div>
