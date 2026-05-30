@@ -2453,6 +2453,7 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
   const [detailId, setDetailId] = useState(null);
+  const [selectedShiftIds, setSelectedShiftIds] = useState([]);
   const safeShifts = normaliseShifts(shifts);
   const activeWorkers = safeWorkers.filter(w => !w.archived);
   const activeClients = safeClients.filter(c => !c.archived);
@@ -2563,6 +2564,20 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
   const editShift = (shift) => { setDraft({ ...emptyShift(), ...shift }); setEditingId(shift.id); window.scrollTo(0, 0); };
   const duplicateShift = (shift) => { setDraft({ ...emptyShift(), ...shift, id: makeId('shift'), status: 'Scheduled', startedAt: '', endedAt: '', notes: '', date: shift.date || todayISO(), reviewStatus: 'Not reviewed', payrollStatus: 'Not generated', invoiceStatus: 'Not generated' }); setEditingId(null); window.scrollTo(0, 0); };
   const deleteShift = (id) => { if (confirm('Delete this assigned shift?')) { const nextShifts = safeShifts.filter(shift => shift.id !== id); setShifts(nextShifts); onPublishSchedule({ nextShifts, message: 'Shift deleted and employee portal updated.' }); } };
+  const toggleShiftSelection = (id) => setSelectedShiftIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const selectAllVisibleShifts = () => setSelectedShiftIds(viewRows.map(s => s.id).filter(Boolean));
+  const clearShiftSelection = () => setSelectedShiftIds([]);
+  const deleteSelectedShifts = () => {
+    const count = selectedShiftIds.length;
+    if (!count) return;
+    if (confirm(`Delete ${count} selected shift${count === 1 ? '' : 's'}? This will also update the employee portal.`)) {
+      const selected = new Set(selectedShiftIds);
+      const nextShifts = safeShifts.filter(shift => !selected.has(shift.id));
+      setShifts(nextShifts);
+      setSelectedShiftIds([]);
+      onPublishSchedule({ nextShifts, message: `${count} shift${count === 1 ? '' : 's'} deleted and employee portal updated.` });
+    }
+  };
   const updateShift = (id, patch, nextInvoices = safeInvoices) => { const nextShifts = safeShifts.map(shift => shift.id === id ? { ...shift, ...patch, updatedAt: new Date().toISOString() } : shift); setShifts(nextShifts); onPublishSchedule({ nextShifts, nextInvoices, message: 'Shift status updated and published.' }); };
   const reviewShift = (shift) => updateShift(shift.id, { reviewStatus: 'Reviewed', reviewedAt: new Date().toISOString() });
   const generateTimesheet = (shift) => updateShift(shift.id, { payrollStatus: 'Timesheet generated', timesheetGeneratedAt: new Date().toISOString() });
@@ -2672,13 +2687,19 @@ function SchedulesWorkspace({ clients = [], workers = [], shifts = [], setShifts
 
     {view === 'Timesheets' && <Card title="Timesheet Summary"><Records rows={workerTimesheets} empty="No reviewed completed shifts are ready for timesheets yet." render={item => <div className="timesheet-card" key={item.worker.id}><div><b>{item.worker.name}</b><small>{item.rows.length} reviewed shift{item.rows.length === 1 ? '' : 's'} · {item.hours.toFixed(2)} hrs</small></div><div className="actions"><button onClick={() => item.rows.forEach(generateTimesheet)}>Generate Timesheet</button><button onClick={() => item.rows.forEach(markInvoiceReady)}>Mark Invoice Ready</button></div></div>} /></Card>}
 
-    <Card title={view === 'Review' ? 'Completed Shifts Review Queue' : view === 'Timesheets' ? 'Reviewed Shift Evidence' : 'Shift Register'}>
-      <div className="client-table schedule-register"><div className="client-table-head"><span>Shift</span><span>Worker</span><span>Client / Service</span><span>Evidence</span><span>Actions</span></div><Records rows={viewRows} empty="No shifts match this view." render={shift => {
+    <Card title={view === 'Review' ? 'Completed Shifts Review Queue' : view === 'Timesheets' ? 'Reviewed Shift Evidence' : 'Shift Register'} action={selectedShiftIds.length ? `${selectedShiftIds.length} selected` : ''}>
+      <div className="bulk-shift-toolbar">
+        <button type="button" onClick={selectAllVisibleShifts} disabled={!viewRows.length}>Select visible</button>
+        <button type="button" onClick={clearShiftSelection} disabled={!selectedShiftIds.length}>Clear</button>
+        <button type="button" className="danger" onClick={deleteSelectedShifts} disabled={!selectedShiftIds.length}>Delete selected</button>
+      </div>
+      <div className="client-table schedule-register"><div className="client-table-head"><span>Select</span><span>Shift</span><span>Worker</span><span>Client / Service</span><span>Evidence</span><span>Actions</span></div><Records rows={viewRows} empty="No shifts match this view." render={shift => {
         const worker = findWorker(shift.workerId);
         const client = findClient(shift.participantId);
         const late = (shift.status || 'Scheduled') === 'Scheduled' && `${shift.date || ''}T${shift.startTime || '00:00'}` < nowKey;
         const opened = detailId === shift.id;
         return <div className="client-table-row schedule-row-expanded" key={shift.id}>
+          <label className="shift-select-cell"><input type="checkbox" checked={selectedShiftIds.includes(shift.id)} onChange={() => toggleShiftSelection(shift.id)} /><span>Select</span></label>
           <div><b>{fmt(shift.date)} · {shift.startTime}–{shift.endTime}</b><small>{shift.location || client?.address || 'No address'} · {scheduledHours(shift).toFixed(1)} scheduled hrs{shift.recurrenceLabel ? ` · ${shift.recurrenceLabel}` : ''}</small></div>
           <div><b>{worker?.name || shift.workerName || 'Unassigned'}</b><small>{worker?.employeeUsername ? `@${worker.employeeUsername}` : (worker?.email || shift.workerEmail || 'No login')}</small></div>
           <div><b>{client?.name || shift.participantName || 'Participant missing'}</b><small>{shift.supportType || 'No service type'} · {shift.adminNotes || 'No admin notes'}</small></div>
@@ -2768,10 +2789,16 @@ function WorkerPortal({ user, employeeSession, business, worker, workers = [], c
       </section>
       {!matchedWorker && <div className="worker-notice"><b>Employee Profile Not Found</b><span>Your account is not yet linked to an employee record. Ask an admin to create or enable your employee username under Compliance &gt; Employees before assigning shifts.</span></div>}
       {matchedWorker && workerShifts.length === 0 && <div className="worker-notice"><b>No assigned shifts yet</b><span>Your employee profile is active, but no client shifts have been assigned to you yet.</span></div>}
-      <nav className="worker-tabs">{['Today','Week','Month','All Shifts','Notes'].map(tab => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}>{tab}</button>)}</nav>
       {portalMessage && <div className="worker-notice"><b>Sync notice</b><span>{portalMessage}</span></div>}
       <div className="worker-shift-list"><Records rows={visible} empty={active === 'Notes' ? 'No saved shift notes or incidents yet.' : 'No assigned shifts found.'} render={shift => <WorkerShiftCard key={shift.id} shift={shift} displayStatus={getDisplayStatus(shift)} client={findClient(shift.participantId)} onStart={() => startShift(shift)} onEnd={() => endShift(shift)} onNotes={payload => saveNotes(shift, payload)} />} /></div>
     </main>
+    <nav className="worker-bottom-nav">{[
+      ['Today','⌂','Home'],
+      ['Week','▦','Week'],
+      ['Month','◷','Month'],
+      ['Notes','✎','Notes'],
+      ['All Shifts','☰','All']
+    ].map(([tab, icon, label]) => <button key={tab} className={active === tab ? 'active' : ''} onClick={() => setActive(tab)}><span>{icon}</span><small>{label}</small></button>)}</nav>
   </div>;
 }
 
@@ -2791,11 +2818,16 @@ function WorkerShiftCard({ shift, displayStatus, client, onStart, onEnd, onNotes
   const clientName = client?.name || shift.participantName || 'Assigned participant';
   const address = shift.location || client?.address || 'Address not entered';
   const serviceType = shift.supportType || 'Support shift';
+  const scheduledLabel = `${fmt(shift.date)} · ${shift.startTime || '--:--'}–${shift.endTime || '--:--'} Melbourne`;
   const duration = shift.startTime && shift.endTime ? `${hoursBetween(shift.startTime, shift.endTime).toFixed(1)} hrs scheduled` : 'Duration pending';
   const elapsed = shift.startedAt ? Math.max(0, now - new Date(shift.startedAt).getTime()) : 0;
   const elapsedLabel = elapsed ? `${Math.floor(elapsed / 3600000)}h ${Math.floor((elapsed % 3600000) / 60000)}m` : '';
   const notesRequired = status === 'Awaiting Notes' || shift.status === 'Awaiting Notes';
+  const canShowNotes = notesRequired || status === 'Completed' || String(notes || '').trim() || incident;
+  const canReportIncident = ['In Progress','Awaiting Notes','Completed'].includes(status) || incident;
   const notesValid = notes.trim().length >= (notesRequired ? 20 : 1);
+  const statusSteps = ['Scheduled', 'In Progress', 'Awaiting Notes', 'Completed'];
+  const currentStep = status === 'Missed' ? 0 : Math.max(0, statusSteps.indexOf(status));
   const handleSaveNotes = async () => {
     if (notesRequired && notes.trim().length < 20) return alert('Please enter at least 20 characters of shift notes before completing this shift.');
     if (incident && (!incidentType.trim() || !incidentDescription.trim() || !incidentAction.trim())) return alert('Please complete incident type, description and immediate action, or untick Report incident.');
@@ -2814,34 +2846,65 @@ function WorkerShiftCard({ shift, displayStatus, client, onStart, onEnd, onNotes
     setSaved(true);
     setTimeout(() => setSaved(false), 2400);
   };
-  return <article className="worker-shift-card">
-    <div className="worker-shift-head">
-      <div><small>Client</small><h3>{clientName}</h3>{shift.recurrenceLabel && <span className="recurring-badge">Recurring: {shift.recurrenceLabel}</span>}</div>
+  const primaryAction = status === 'Scheduled'
+    ? { label: 'Start Shift', action: onStart, disabled: false }
+    : status === 'In Progress'
+      ? { label: 'End Shift', action: onEnd, disabled: false }
+      : notesRequired
+        ? { label: saving ? 'Submitting…' : 'Submit Notes & Complete', action: handleSaveNotes, disabled: saving || !notesValid || (incident && (!incidentType.trim() || !incidentDescription.trim() || !incidentAction.trim())) }
+        : null;
+  const confirmation = status === 'In Progress'
+    ? `Shift started ${fmtMelbourneTime(shift.startedAt)} Melbourne · elapsed ${elapsedLabel}`
+    : status === 'Awaiting Notes'
+      ? `Clocked out ${fmtMelbourneTime(shift.endedAt)} Melbourne · notes required`
+      : status === 'Completed'
+        ? `Completed${shift.notesSubmittedAt ? ` ${fmtMelbourneDateTime(shift.notesSubmittedAt)}` : ''}`
+        : status === 'Missed'
+          ? 'This scheduled shift appears missed. Contact admin if this is incorrect.'
+          : 'Ready to start.';
+
+  return <article className={`worker-shift-card worker-shift-compact status-${status.toLowerCase().replace(/\s+/g, '-')}`}>
+    <div className="worker-shift-head compact">
+      <div className="worker-client-block"><small>Client</small><h3>{clientName}</h3><p>{serviceType}</p>{shift.recurrenceLabel && <span className="recurring-badge">Recurring: {shift.recurrenceLabel}</span>}</div>
       <span className={`worker-status ${status.toLowerCase().replace(/\s+/g, '-')}`}>{status}</span>
     </div>
-    <div className="worker-detail-grid">
-      <div className="worker-detail-item"><small>Shift Details</small><b>{fmt(shift.date)} · {shift.startTime || '--:--'}–{shift.endTime || '--:--'}</b><span>{duration}</span></div>
-      <div className="worker-detail-item"><small>Address</small><b>{address}</b><span>{address === 'Address not entered' ? 'Ask admin to confirm before travelling' : 'Attend this location unless advised otherwise'}</span></div>
-      <div className="worker-detail-item"><small>Service Type</small><b>{serviceType}</b><span>{shift.adminNotes ? 'See admin notes below' : 'No extra instructions entered'}</span></div>
+
+    <div className="worker-quick-details">
+      <div><small>Time</small><b>{scheduledLabel}</b><span>{duration}</span></div>
+      <div><small>Address</small><b>{address}</b><span>{address === 'Address not entered' ? 'Confirm location with admin' : 'Attend this location'}</span></div>
     </div>
+
+    <div className={`worker-status-timeline step-${currentStep}`}>
+      {statusSteps.map((step, idx) => <div key={step} className={idx <= currentStep ? 'done' : ''}><span></span><small>{step === 'Awaiting Notes' ? 'Notes' : step}</small></div>)}
+    </div>
+
+    {(status === 'In Progress' || status === 'Awaiting Notes' || status === 'Completed' || status === 'Missed') && <div className={`worker-confirmation ${status.toLowerCase().replace(/\s+/g, '-')}`}><b>{status === 'In Progress' ? 'Shift in progress' : status === 'Awaiting Notes' ? 'Shift ended' : status}</b><span>{confirmation}</span></div>}
+
     <button className="worker-detail-toggle" type="button" onClick={() => setOpen(v => !v)}>{open ? 'Hide shift details' : 'Open shift details'}</button>
-    {open && <div className="worker-detail-panel">
+    {open && <div className="worker-detail-panel worker-detail-panel-compact">
       <div><small>Emergency Contact</small><b>{client?.emergencyContact || client?.nextOfKin || 'Not entered'}</b></div>
       <div><small>Participant Notes</small><p>{client?.notes || client?.supportNotes || 'No participant notes entered.'}</p></div>
-      <div><small>Admin Notes</small><p>{shift.adminNotes || 'No admin notes entered.'}</p></div>
-      <div><small>Timeline</small><p>{shift.viewedAt ? `Viewed: ${fmtMelbourneDateTime(shift.viewedAt)}` : 'Viewed time not recorded'}{shift.startedAt ? ` · Started: ${fmtMelbourneDateTime(shift.startedAt)}` : ''}{shift.endedAt ? ` · Ended: ${fmtMelbourneDateTime(shift.endedAt)}` : ''}</p></div>
+      <div><small>Admin Instructions</small><p>{shift.adminNotes || 'No admin notes entered.'}</p></div>
+      <div><small>Clock Evidence</small><p>{shift.viewedAt ? `Viewed: ${fmtMelbourneDateTime(shift.viewedAt)}` : 'Viewed time not recorded'}{shift.startedAt ? ` · Started: ${fmtMelbourneDateTime(shift.startedAt)}` : ''}{shift.endedAt ? ` · Ended: ${fmtMelbourneDateTime(shift.endedAt)}` : ''}</p></div>
     </div>}
-    {status === 'In Progress' && <div className="worker-running-timer"><b>Shift in progress</b><span>Started {fmtMelbourneTime(shift.startedAt)} Melbourne time · Elapsed {elapsedLabel}</span></div>}
+
     {shift.adminNotes && !open && <div className="worker-admin-note"><b>Admin notes</b><p>{shift.adminNotes}</p></div>}
-    <div className="worker-actions"><button className="primary" disabled={status !== 'Scheduled'} onClick={onStart}>Sign into shift</button><button disabled={status !== 'In Progress'} onClick={onEnd}>Sign out of shift</button></div>
-    <label className="worker-note-field"><span>Shift Notes {notesRequired ? '*' : ''}</span><textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Enter progress notes, observations, concerns or handover notes. Minimum 20 characters required to complete a shift." /><small>{notes.trim().length} characters{notesRequired && !notesValid ? ' · minimum 20 required' : ''}</small></label>
-    <label className="worker-incident-toggle"><input type="checkbox" checked={incident} onChange={e => setIncident(e.target.checked)} /><span>Report incident for this shift</span></label>
-    {incident && <div className="worker-incident-box">
-      <label><span>Incident Type</span><input value={incidentType} onChange={e => setIncidentType(e.target.value)} placeholder="Fall, behaviour, medication, injury…" /></label>
-      <label><span>Description</span><textarea value={incidentDescription} onChange={e => setIncidentDescription(e.target.value)} placeholder="Describe what happened." /></label>
-      <label><span>Immediate Action Taken</span><textarea value={incidentAction} onChange={e => setIncidentAction(e.target.value)} placeholder="What action did you take and who was notified?" /></label>
+
+    {canShowNotes && <div className="worker-notes-stage">
+      <label className="worker-note-field"><span>Shift Notes {notesRequired ? '*' : ''}</span><textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Enter progress notes, observations, concerns or handover notes. Minimum 20 characters required to complete a shift." /><small>{notes.trim().length} characters{notesRequired && !notesValid ? ' · minimum 20 required' : ''}</small></label>
+      {canReportIncident && <label className="worker-incident-toggle"><input type="checkbox" checked={incident} onChange={e => setIncident(e.target.checked)} /><span>Report incident for this shift</span></label>}
+      {incident && <div className="worker-incident-box">
+        <label><span>Incident Type</span><input value={incidentType} onChange={e => setIncidentType(e.target.value)} placeholder="Fall, behaviour, medication, injury…" /></label>
+        <label><span>Description</span><textarea value={incidentDescription} onChange={e => setIncidentDescription(e.target.value)} placeholder="Describe what happened." /></label>
+        <label><span>Immediate Action Taken</span><textarea value={incidentAction} onChange={e => setIncidentAction(e.target.value)} placeholder="What action did you take and who was notified?" /></label>
+      </div>}
     </div>}
-    <div className="worker-card-footer"><button onClick={handleSaveNotes} disabled={saving || !notes.trim() || (notesRequired && !notesValid)}>{saving ? 'Saving…' : notesRequired ? 'Submit Notes & Complete Shift' : 'Save Notes'}</button><small>{saved ? 'Saved successfully.' : (shift.startedAt ? `Started: ${fmtMelbourneDateTime(shift.startedAt)}` : 'Not started')} {shift.endedAt && !saved ? ` · Ended: ${fmtMelbourneDateTime(shift.endedAt)}` : ''}</small></div>
+
+    <div className="worker-single-action">
+      {primaryAction ? <button className="primary" onClick={primaryAction.action} disabled={primaryAction.disabled}>{primaryAction.label}</button> : <button type="button" disabled>{status === 'Completed' ? 'Shift Completed' : status}</button>}
+      {!canShowNotes && canReportIncident && <button type="button" className="ghost" onClick={() => { setIncident(true); setOpen(true); }}>Report Incident</button>}
+      <small>{saved ? 'Saved successfully.' : confirmation}</small>
+    </div>
   </article>;
 }
 
